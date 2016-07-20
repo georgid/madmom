@@ -20,6 +20,8 @@ import sys
 import argparse
 import multiprocessing as mp
 
+import numpy as np
+
 from collections import MutableSequence
 
 
@@ -632,6 +634,48 @@ def process_batch(processor, files, output_dir=None, output_suffix=None,
         tasks.put((processor, input_file, output_file))
     # wait for all processing tasks to finish
     tasks.join()
+
+
+# processor for buffering data
+class BufferProcessor(Processor):
+    """
+    Buffer for processors which need context to do their processing.
+
+    E.g. SpectrogramDifference needs a context of two frames to be able to
+    compute the difference between two consecutive frames.
+
+    Parameters
+    ----------
+    buffer_size : int
+        Size of the buffer.
+
+    """
+
+    def __init__(self, buffer_size, init=None):
+        self.buffer_size = buffer_size
+        self.buffer = init
+
+    def process(self, data):
+        """
+        Buffer the data.
+
+        Parameters
+        ----------
+        data : numpy array or subclass thereof
+            Data to be buffered.
+
+        Returns
+        -------
+        numpy array or subclass thereof
+            Data with buffered context.
+
+        """
+        # init the buffer with the same ndarray subclass and data type
+        if self.buffer is None:
+            self.buffer = np.repeat(data * 0, self.buffer_size, axis=0)
+        # append the new data and return everything from index 1 on
+        self.buffer = np.vstack((self.buffer, data))[1:]
+        return self.buffer
 
 
 # function to process live input
