@@ -641,17 +641,34 @@ class BufferProcessor(Processor):
     """
     Buffer for processors which need context to do their processing.
 
+    Parameters
+    ----------
+    buffer_size : int or tuple
+        Size of the buffer (time steps, [additional dimensions]).
+
+    Notes
+    -----
+    If `buffer_size` (or the first value thereof) is 1, only the un-buffered
+    current value is returned.
+
+    If context is needed, `buffer_size` must be set to >1.
     E.g. SpectrogramDifference needs a context of two frames to be able to
     compute the difference between two consecutive frames.
 
-    Parameters
-    ----------
-    buffer_size : int
-        Size of the buffer.
-
     """
 
-    def __init__(self, buffer_size, init=None):
+    def __init__(self, buffer_size=None, init=None, init_value=0):
+        # if init is given, infer buffer_size from it
+        if buffer_size is None and init is not None:
+            buffer_size = init.shape
+        # if buffer_size is int, make a tuple
+        elif isinstance(buffer_size, int):
+            buffer_size = (buffer_size, )
+        # FIXME: use np.pad for fancy initialisation (can be done in process())
+        # init buffer if needed
+        if buffer_size is not None and init is None:
+            init = np.ones(buffer_size) * init_value
+        # save variables
         self.buffer_size = buffer_size
         self.buffer = init
 
@@ -670,12 +687,20 @@ class BufferProcessor(Processor):
             Data with buffered context.
 
         """
-        # init the buffer with the same ndarray subclass and data type
-        if self.buffer is None:
-            self.buffer = np.repeat(data * 0, self.buffer_size, axis=0)
-        # append the new data and return everything from index 1 on
-        self.buffer = np.vstack((self.buffer, data))[1:]
+        # expected minimum number of dimensions
+        ndmin = len(self.buffer_size)
+        # cast the data to have that many dimensions
+        data = np.array(data, copy=False, subok=True, ndmin=ndmin)
+        # length of the data
+        data_length = len(data)
+        # remove `data_length` from buffer at the beginning and append new data
+        self.buffer = np.roll(self.buffer, -data_length, axis=0)
+        self.buffer[-data_length:] = data
+        # return the complete buffer
         return self.buffer
+
+    # alias for easier / more intuitive calling
+    buffer = process
 
 
 # function to process live input
@@ -804,10 +829,12 @@ def io_arguments(parser, output_suffix='.txt', pickle=True, online=False):
         sp.set_defaults(func=process_online)
         # Note: requiring '-o' is a simple safety measure to not overwrite
         #       existing audio files after using the processor in 'batch' mode
-        sp.add_argument('-o', dest='out_stream', type=argparse.FileType('wb'),
+        sp.add_argument('-o', dest='outfile', type=argparse.FileType('wb'),
                         default=output, help='output file [default: STDOUT]')
         sp.add_argument('--block_size', dest='block_size', type=int,
                         default=1, help='number of frames used for processing')
+        sp.set_defaults(sample_rate=44100)
         sp.set_defaults(num_channels=1)
-        sp.set_defaults(num_frames=1)
         sp.set_defaults(origin='future')
+        sp.set_defaults(num_frames=1)
+        sp.set_defaults(stream=None)
