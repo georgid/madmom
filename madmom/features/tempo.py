@@ -10,8 +10,9 @@ This module contains tempo related functionality.
 from __future__ import absolute_import, division, print_function
 
 import numpy as np
+from scipy.signal import argrelmax
 
-from madmom.processors import Processor
+from madmom.processors import Processor, BufferProcessor
 from madmom.audio.signal import smooth as smooth_signal
 
 NO_TEMPO = np.nan
@@ -203,7 +204,6 @@ def detect_tempo(histogram, fps):
         relative strengths (second column).
 
     """
-    from scipy.signal import argrelmax
     # histogram of IBIs
     bins = histogram[0]
     # convert the histogram bin delays to tempi in beats per minute
@@ -288,8 +288,9 @@ class TempoEstimationProcessor(Processor):
 
     def __init__(self, method=METHOD, min_bpm=MIN_BPM, max_bpm=MAX_BPM,
                  act_smooth=ACT_SMOOTH, hist_smooth=HIST_SMOOTH, alpha=ALPHA,
-                 fps=None, **kwargs):
+                 fps=None, online=False, **kwargs):
         # pylint: disable=unused-argument
+        from madmom.audio.comb_filters import CombFilterbankProcessor
         # save variables
         self.method = method
         self.min_bpm = min_bpm
@@ -298,6 +299,13 @@ class TempoEstimationProcessor(Processor):
         self.hist_smooth = hist_smooth
         self.alpha = alpha
         self.fps = fps
+        # update variables in online mode
+        self.online = online
+        self.taus = np.arange(self.min_interval, self.max_interval + 1)
+        self.cfb = CombFilterbankProcessor('backward', self.taus, self.alpha,
+                                           online=online)
+        size = (act_smooth * fps, len(self.taus))
+        self.histogram = BufferProcessor(None, init=np.zeros(size))
 
     @property
     def min_interval(self):
@@ -310,6 +318,55 @@ class TempoEstimationProcessor(Processor):
         return int(np.ceil(60. * self.fps / self.min_bpm))
 
     def process(self, activations):
+        """
+        Detect the tempi from the (beat) activations.
+
+        Parameters
+        ----------
+        activations : numpy array
+            Beat activation function.
+
+        Returns
+        -------
+        tempi : numpy array
+            Array with the dominant tempi [bpm] (first column) and their
+            relative strengths (second column).
+
+        """
+        if self.online:
+            return self.process_online(activations)
+        return self.process_offline(activations)
+
+    def process_online(self, activations):
+        """
+        Detect the tempi from the (beat) activations.
+
+        Parameters
+        ----------
+        activations : numpy array
+            Beat activation function.
+
+        Returns
+        -------
+        tempi : numpy array
+            Array with the dominant tempi [bpm] (first column) and their
+            relative strengths (second column).
+
+        """
+        # do not smooth the activations
+        # apply a bank of comb filters
+        act = self.cfb.process(activations)
+        # weight the maximum with the activations and add to histogram buffer
+        act_max = act == np.max(act, axis=-1)[..., np.newaxis]
+        self.histogram(np.atleast_2d(act_max) * activations)
+        # build a histogram by summing and smooth it
+        histogram = np.sum(self.histogram._buffer, axis=0)
+        histogram = smooth_histogram((histogram, self.taus),
+                                     self.hist_smooth)
+        # detect the tempi from the histogram and return them
+        return detect_tempo(histogram, self.fps)
+
+    def process_offline(self, activations):
         """
         Detect the tempi from the (beat) activations.
 

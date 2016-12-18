@@ -12,7 +12,7 @@ import numpy as np
 cimport cython
 cimport numpy as np
 
-from madmom.processors import Processor
+from madmom.processors import Processor, BufferProcessor
 
 
 # feed forward comb filter
@@ -293,7 +293,7 @@ class CombFilterbankProcessor(Processor):
 
     """
 
-    def __init__(self, filter_function, tau, alpha):
+    def __init__(self, filter_function, tau, alpha, online=False):
         # convert tau and alpha to a numpy arrays
         self.tau = np.array(tau, dtype=np.int, ndmin=1)
         self.alpha = np.array(alpha, dtype=np.float, ndmin=1)
@@ -304,6 +304,13 @@ class CombFilterbankProcessor(Processor):
             self.filter_function = feed_backward_comb_filter
         else:
             raise ValueError('unknown `filter_function`: %s' % filter_function)
+        # in online mode, keep the last max(tau) time steps
+        self.online = online
+        self.buffer = BufferProcessor(max(self.tau),
+                                      init=np.zeros((max(self.tau),
+                                                     len(self.tau))))
+        # mask to access the right values back in time
+        self.mask = (-self.tau, np.arange(len(self.tau)))
 
     def process(self, data):
         """
@@ -321,4 +328,12 @@ class CombFilterbankProcessor(Processor):
             last dimension.
 
         """
+        # buffer the data in online mode
+        if self.online:
+            # add the weighted data from the buffer (at the correct tau) to
+            # the current data
+            # y[n] = x[n] + α * x[n - τ]
+            data = data + self.alpha * self.buffer._buffer[self.mask]
+            return self.buffer(np.atleast_2d(data))[-1]
+        # else return the whole comb filter output
         return comb_filter(data, self.filter_function, self.tau, self.alpha)
