@@ -406,6 +406,32 @@ def quantize_events(events, fps, length=None, shift=None):
     return quantized
 
 
+def write_output(data, output, delimiter='\t'):
+    """
+    Write data to output.
+
+    Parameters
+    ----------
+    data : str, tuple or list
+        Data to be written to output.
+    output : open file handle
+        Where to write the data to.
+    delimiter : str, optional
+        String or character separating multiple values.
+
+    Notes
+    -----
+    If `data` is a tuple or list, the individual values are concatenated as a
+    string with `delimiter` separating them.
+
+    """
+    if data is not None:
+        if isinstance(data, (list, tuple)):
+            data = delimiter.join([str(d) for d in data])
+        output.write('%s\n' % str(data))
+        output.flush()
+
+
 # argparse action to set and overwrite default lists
 class OverrideDefaultListAction(argparse.Action):
     """
