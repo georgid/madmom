@@ -394,6 +394,38 @@ class HiddenMarkovModel(object):
             raise ValueError('Initial distribution is not a probability '
                              'distribution.')
         self.initial_distribution = initial_distribution
+        # attributes needed for stateful processing (i.e. forward_step())
+        self._prev = self.initial_distribution.copy()
+        self._cur = np.zeros_like(self._prev)
+
+    def __getstate__(self):
+        # copy everything to a pickleable object
+        state = self.__dict__.copy()
+        # do not pickle attributes needed for stateful processing
+        state.pop('_prev', None)
+        state.pop('_cur', None)
+        return state
+
+    def __setstate__(self, state):
+        # restore pickled instance attributes
+        self.__dict__.update(state)
+        # add non-pickled attributes needed for stateful processing
+        self._prev = self.initial_distribution.copy()
+        self._cur = np.zeros_like(self._prev)
+
+    def reset(self, initial_distribution=None):
+        """
+        Reset the HMM to its initial state.
+
+        Parameters
+        ----------
+        initial_distribution : numpy array, optional
+            Reset to this initial state distribution.
+
+        """
+        # reset initial state distribution
+        self._prev = initial_distribution or self.initial_distribution.copy()
+        self._cur = np.zeros_like(self._prev)
 
     @cython.cdivision(True)
     @cython.boundscheck(False)
@@ -655,6 +687,69 @@ class HiddenMarkovModel(object):
             yield np.asarray(fwd_cur).copy()
 
             fwd_cur, fwd_prev = fwd_prev, fwd_cur
+
+    @cython.cdivision(True)
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def forward_step(self, observation):
+        """
+        Compute the forward variable stepwise. Instead of computing in the log
+        domain, we normalise at each step, which is faster for the forward
+        algorithm.
+
+        Parameters
+        ----------
+        observation : numpy array
+            Observation to compute the forward variables for.
+        Returns
+        -------
+        numpy array, shape (num_states)
+            Forward variable.
+
+        """
+        # transition model stuff
+        tm = self.transition_model
+        cdef unsigned int [::1] tm_states = tm.states
+        cdef unsigned int [::1] tm_pointers = tm.pointers
+        cdef double [::1] tm_probabilities = tm.probabilities
+        cdef unsigned int num_states = tm.num_states
+
+        # observation model stuff
+        om = self.observation_model
+        cdef unsigned int [::1] om_pointers = om.pointers
+        # TODO: check why ascontiguousarray is needed sometimes
+        cdef double [:, ::1] om_densities = om.densities(
+            np.ascontiguousarray(observation))
+
+        # forward variables
+        cdef double[::1] fwd_cur = self._cur
+        cdef double[::1] fwd_prev = self._prev
+
+        # define counters etc.
+        cdef unsigned int prev_pointer, state
+        cdef double prob_sum, norm_factor
+
+        # keep track of the normalisation sum
+        prob_sum = 0
+        # iterate over all states
+        for state in range(num_states):
+            fwd_cur[state] = 0
+            # sum over all possible predecessors
+            for prev_pointer in range(tm_pointers[state],
+                                      tm_pointers[state + 1]):
+                fwd_cur[state] += fwd_prev[tm_states[prev_pointer]] * \
+                                  tm_probabilities[prev_pointer]
+            # multiply with the observation probability
+            fwd_cur[state] *= om_densities[0, om_pointers[state]]
+            prob_sum += fwd_cur[state]
+        # normalise
+        norm_factor = 1. / prob_sum
+        for state in range(num_states):
+            # Note: overwrite the previous variables and return them
+            fwd_prev[state] = fwd_cur[state] * norm_factor
+
+        # return the previous forward variables
+        return np.array(fwd_prev)
 
 # alias
 HMM = HiddenMarkovModel
