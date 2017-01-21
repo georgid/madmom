@@ -95,7 +95,10 @@ def main():
         # track the beats with a DBN
         beat_processor = DBNBeatTrackingProcessor(**vars(args))
         # output handler
-        from madmom.utils import write_events as writer
+        if args.online:
+            from madmom.utils import write_output as writer
+        else:
+            from madmom.utils import write_events as writer
         # sequentially process everything
         out_processor = [beat_processor, writer]
 

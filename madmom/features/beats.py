@@ -9,6 +9,7 @@ This module contains beat tracking related functionality.
 
 from __future__ import absolute_import, division, print_function
 
+import sys
 import numpy as np
 
 from madmom.processors import Processor, SequentialProcessor, ParallelProcessor
@@ -936,7 +937,7 @@ class DBNBeatTrackingProcessor(Processor):
     def __init__(self, min_bpm=MIN_BPM, max_bpm=MAX_BPM, num_tempi=NUM_TEMPI,
                  transition_lambda=TRANSITION_LAMBDA,
                  observation_lambda=OBSERVATION_LAMBDA, correct=CORRECT,
-                 threshold=THRESHOLD, fps=None, **kwargs):
+                 threshold=THRESHOLD, fps=None, online=False, **kwargs):
         # pylint: disable=unused-argument
         # pylint: disable=no-name-in-module
         from .beats_hmm import (BeatStateSpace as St,
@@ -958,8 +959,105 @@ class DBNBeatTrackingProcessor(Processor):
         self.correct = correct
         self.threshold = threshold
         self.fps = fps
+        self.min_bpm = min_bpm
+        self.max_bpm = max_bpm
+        # kepp state in online mode
+        self.online = online
+        # TODO: refactor the visualisation stuff
+        if self.online:
+            self.visualize = kwargs.get('verbose', False)
+            self.counter = 0
+            self.beat_counter = 0
+            self.strength = 0
+            self.last_beat = 0
+            self.tempo = 0
 
     def process(self, activations):
+        """
+        Detect the beats in the given activation function.
+
+        Parameters
+        ----------
+        activations : numpy array
+            Beat activation function.
+
+        Returns
+        -------
+        beats : numpy array
+            Detected beat positions [seconds].
+
+        Notes
+        -----
+        Depending on online/offline mode the beats are either reported
+        frame-by-frame or for the whole sequence, respectively.
+
+        """
+        if self.online:
+            return self.process_step(activations)
+        return self.process_sequence(activations)
+
+    def process_step(self, activations):
+        """
+        Detect the beats in the given activation function frame-by-frame.
+
+        Parameters
+        ----------
+        activations : numpy array
+            Beat activation for a single frame.
+
+        Returns
+        -------
+        beats
+            Detected beat position [seconds].
+
+        """
+        # use forward path to get best state
+        fwd = self.hmm.forward(activations)
+        state = np.argmax(fwd)
+        # decide if it is a beat
+        beat = self.om.pointers[state] == 1
+        # the position inside the beat
+        position = self.st.state_positions[state]
+        # visualisation stuff
+        self.counter += 1
+        if self.visualize:
+            beat_length = 80
+            display = [' '] * beat_length
+            display[int(position * beat_length)] = '*'
+            # activation strength indicator
+            strength_length = 10
+            self.strength = int(max(self.strength, activations * 10))
+            display.append('| ')
+            display.extend(['*'] * self.strength)
+            display.extend([' '] * (strength_length - self.strength))
+            # reduce the displayed strength every couple of frames
+            if self.counter % 5 == 0:
+                self.strength -= 1
+            # beat indicator
+            if beat:
+                self.beat_counter = 3
+            if self.beat_counter > 0:
+                display.append('| X ')
+            else:
+                display.append('|   ')
+            self.beat_counter -= 1
+            # display tempo
+            display.append('| %5.1f | ' % self.tempo)
+            sys.stderr.write('\r%s' % ''.join(display))
+            sys.stderr.flush()
+        # current beat position
+        beat_pos = self.counter / float(self.fps)
+        # output the beats as they occur
+        next_beat = self.last_beat + 60. / self.max_bpm
+        if beat and beat_pos >= next_beat:
+            # update tempo
+            self.tempo = 60. / (beat_pos - self.last_beat)
+            # update last beat
+            self.last_beat = beat_pos
+            return beat_pos
+        # else do not report a beat at all
+
+    def process_sequence(self, activations):
         """
         Detect the beats in the given activation function.
 
