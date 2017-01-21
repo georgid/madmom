@@ -44,6 +44,40 @@ class TestRNNClass(unittest.TestCase):
                                      4.83996118e-05, 2.72355013e-04]))
 
 
+class TestLSTMClass(unittest.TestCase):
+    def setUp(self):
+        # uni-directional LSTM-RNN
+        self.rnn = NeuralNetwork.load(BEATS_LSTM[0])
+        self.data = np.zeros((4, self.rnn.layers[0].cell.weights.shape[0]))
+        self.data[1] = 1.
+        self.result = [0.00126955, 0.03134079, 0.01535073, 0.00207471]
+
+    def test_lstm_sequence(self):
+        # FIXME: these new models have the online attribute set, so we must
+        #        call process_sequence, process in turn calls process_step
+        #        We have to ravel the result afterwards, since this is usually
+        #        done in process()
+        result = self.rnn.process_sequence(self.data).ravel()
+        self.assertTrue(np.allclose(result, self.result))
+
+    def test_lstm_step(self):
+        result_1 = np.fromiter(iter([self.rnn.process_step(d) for d in
+                                     self.data]), dtype=NN_DTYPE)
+        self.assertTrue(np.allclose(np.hstack(result_1), self.result))
+        # after resetting the RNN, it must produce the same output
+        self.rnn.reset()
+        result_2 = np.fromiter(iter([self.rnn.process_step(d) for d in
+                                     self.data]), dtype=NN_DTYPE)
+        self.assertTrue(
+            np.allclose(np.hstack(result_1), np.hstack(result_2)))
+        # without resetting it produces different results
+        result_3 = np.fromiter(iter([self.rnn.process_step(d) for d in
+                                     self.data]), dtype=NN_DTYPE)
+        self.assertTrue(np.allclose(np.hstack(result_3),
+                                    [0.00054101, 0.05323271,
+                                     0.0548761, 0.00785541]))
+
+
 # class for testing all other (offline-only) networks
 class TestNeuralNetworkClass(unittest.TestCase):
 
