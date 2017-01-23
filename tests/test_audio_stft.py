@@ -50,21 +50,17 @@ class TestStftFunction(unittest.TestCase):
         self.assertIsInstance(result, np.ndarray)
         self.assertEqual(result.dtype, np.complex64)
 
-    def test_dimensionality(self):
-        # input must be 2D
-        with self.assertRaises(ValueError):
-            stft(np.arange(10), window=None)
-        # like this:
-        result = stft(np.arange(10).reshape(5, 2), window=None)
-        self.assertEqual(result.shape, (5, 1))
+    def test_window_size(self):
         # window size must match frame size
         with self.assertRaises(ValueError):
             stft(np.arange(10).reshape(5, 2), window=[1, 2, 3])
-        # fft size must be greater or equal frame size
-        with self.assertRaises(ValueError):
-            stft(np.arange(10).reshape(5, 2), window=None, fft_size=1)
 
-    def test_value(self):
+    def test_1d_signal(self):
+        result = stft(sig_2d[0], window=None)
+        res = [3. + 0.j, 0. + 0.j, 0. - 0.j, 3 + 0.j, 0. + 0.j, 0. + 0.j]
+        self.assertTrue(np.allclose(result[0], res))
+
+    def test_2d_signal(self):
         result = stft(sig_2d, window=None)
         # signal length and FFT size = 12
         # fft_freqs: 0, 1/12, 2/12, 3/12, 4/12, 5/12
