@@ -11,6 +11,8 @@ from __future__ import absolute_import, division, print_function
 
 import numpy as np
 
+from madmom.features.notes_hmm import NoteStateSpace, BarNoteTransitionModel_old,\
+    GMMNoteTrackingObservationModel, NoteTransitionModel, BarNoteTransitionModel
 from madmom.processors import Processor, SequentialProcessor, ParallelProcessor
 from madmom.audio.signal import smooth as smooth_signal
 from madmom.ml.nn import average_predictions
@@ -1584,15 +1586,21 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
             # model each rhythmic pattern as a bar
             state_space = BarStateSpace(num_beats, min_interval[p],
                                         max_interval[p], num_tempi[p])
-            transition_model = BarTransitionModel(state_space,
+            bar_transition_model = BarTransitionModel(state_space,
                                                   transition_lambda[p])
+            note_state_space = NoteStateSpace()
+            note_transition_model = NoteTransitionModel(note_state_space)
+            bar_note_transition_model = BarNoteTransitionModel_old(bar_transition_model, note_transition_model)
+            
             state_spaces.append(state_space)
-            transition_models.append(transition_model)
+            transition_models.append(bar_transition_model)
         # create multi pattern state space, transition and observation model
         self.st = MultiPatternStateSpace(state_spaces)
         self.tm = MultiPatternTransitionModel(transition_models)
         self.om = GMMPatternTrackingObservationModel(gmms, self.st)
+#         self.nom = GMMNoteTrackingObservationModel(gmms, note_state_space)
         # instantiate a HMM
+#         self.hmm = Hmm(self.tm, self.om, self.nom, None)
         self.hmm = Hmm(self.tm, self.om, None)
 
     def process(self, activations):
@@ -1603,7 +1611,7 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
         ----------
         activations : numpy array
             Activations (i.e. multi-band spectral features).
-
+    
         Returns
         -------
         beats : numpy array
@@ -1611,6 +1619,7 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
 
         """
         # get the best state path by calling the viterbi algorithm
+#         path, _ = self.hmm.viterbi(activations, note_activations)
         path, _ = self.hmm.viterbi(activations)
         # the positions inside the pattern (0..num_beats)
         positions = self.st.state_positions[path]

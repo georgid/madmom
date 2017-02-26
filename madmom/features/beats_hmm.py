@@ -389,6 +389,13 @@ class BarTransitionModel(TransitionModel):
             states = np.hstack((states, to_states[to_prob]))
             prev_states = np.hstack((prev_states, from_states[from_prob]))
             probabilities = np.hstack((probabilities, prob[prob != 0]))
+        
+        ### stored to be re-used in BarNoteTransitionModel 
+        self.states = states
+        self.prev_states = prev_states
+        self.probabilities = probabilities
+        
+        
         # make the transitions sparse
         transitions = self.make_sparse(states, prev_states, probabilities)
         # instantiate a TransitionModel

@@ -104,7 +104,7 @@ def main():
         diff = SpectrogramDifferenceProcessor(**vars(args))
         mb = MultiBandSpectrogramProcessor(**vars(args))
         in_processor = [sig, frames, filt, log, diff, mb]
-
+        
     # output processor
     if args.save:
         # save the multiband features to file
