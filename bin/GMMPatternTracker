@@ -18,6 +18,7 @@ from madmom.audio.spectrogram import (FilteredSpectrogramProcessor,
 from madmom.features import ActivationsProcessor
 from madmom.features.beats import PatternTrackingProcessor
 from madmom.models import PATTERNS_BALLROOM
+from madmom.features.bar_notes import NotePatternTrackingProcessor
 
 
 def main():
@@ -67,7 +68,8 @@ def main():
     io_arguments(p, output_suffix='.beats.txt')
     ActivationsProcessor.add_arguments(p)
     SignalProcessor.add_arguments(p, norm=False, gain=0)
-    PatternTrackingProcessor.add_arguments(p)
+#     PatternTrackingProcessor.add_arguments(p)
+    NotePatternTrackingProcessor.add_arguments(p)
 
     # parse arguments
     args = p.parse_args()
@@ -111,7 +113,8 @@ def main():
         out_processor = ActivationsProcessor(mode='w', **vars(args))
     else:
         # downbeat processor
-        downbeat_processor = PatternTrackingProcessor(**vars(args))
+#         downbeat_processor = PatternTrackingProcessor(**vars(args))
+        downbeat_processor = NotePatternTrackingProcessor(**vars(args))
         if args.downbeats:
             # simply write the timestamps
             from madmom.utils import write_events as writer

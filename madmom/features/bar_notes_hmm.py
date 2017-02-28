@@ -1,3 +1,8 @@
+# encoding: utf-8
+# pylint: disable=no-member
+# pylint: disable=invalid-name
+# pylint: disable=too-many-arguments
+
 '''
 Created on Feb 18, 2017
 
@@ -10,7 +15,7 @@ from madmom.ml.hmm import TransitionModel, ObservationModel
 
 class SingleNoteStateSpace(object):
     def __init__(self):
-        self.num_states = 3
+        self.num_states = 2
         
 class NoteStateSpace(object):
     def __init__(self):
@@ -28,17 +33,14 @@ class NoteTransitionModel(object):
         self.state_space = note_state_space
         
         # define some dummy transitions
-        self.states = np.array([0,1,1])
-        self.prev_states = np.array([0,0,1])
-        self.probabilities = np.array([0.1, 0.9, 1])  
+        self.states = np.array([0,0,1,1])
+        self.prev_states = np.array([0,1,0,1])
+        self.probabilities = np.array([0.5, 0.5, 0.5, 0.5])  
         
-        self.states = [0,1,1]
-        self.prev_states = [0,0,1]
-        self.probabilities = [0.1, 0.9, 1]
         
 
 class BarNoteStateSpace():
-    def __init__(self):
+    def __init__(self, bar_state_space, note_state_space):
         pass
 
 class BarNoteTransitionModel(TransitionModel):
@@ -63,11 +65,13 @@ class BarNoteTransitionModel(TransitionModel):
         ##### to_states
         to_bar_states = bar_transition_model.states
         to_note_states = note_transition_model.states
+        # cartesian product (e.g. matrix) of two to_states, shape : |N| x |B|
         to_idx_flattened = substates_to_flatidx( to_bar_states, to_note_states, num_bar_states, num_note_states)
         
         ##### from_states
         prev_bar_states = bar_transition_model.prev_states
         prev_note_states = note_transition_model.prev_states
+        # cartesian product (e.g. matrix) of two from_states, shape : |N| x |B|
         prev_idx_flattened = substates_to_flatidx( prev_bar_states, prev_note_states, num_bar_states, num_note_states)
 
 
@@ -77,7 +81,7 @@ class BarNoteTransitionModel(TransitionModel):
         # cartesian multipl. of probabilities (e.g. matrix), shape : |N| x |B|
         mat_prob = note_probs.reshape(len(note_probs),1) * bar_probs.reshape(1,len(bar_probs))
         # matrix to flattened array 
-        probs_flattened = mat_prob.flatten()
+        probs_flattened = mat_prob.flatten(order='F') # order F guarantees that the generated indices increase monotonously    
         probs_flattened = normalize(prev_idx_flattened, probs_flattened)
         
         # make the transitions sparse
@@ -126,7 +130,7 @@ class BarNoteTransitionModel_old(TransitionModel):
         bar_note_probs = np.array(bar_note_probs)
 
         bar_note_probs = normalize(prev_bar_note_states, bar_note_probs)
-        
+      
         # make the transitions sparse
         transitions = self.make_sparse(bar_note_states, prev_bar_note_states, bar_note_probs)
         # instantiate a TransitionModel
@@ -136,11 +140,20 @@ class BarNoteTransitionModel_old(TransitionModel):
 def substates_to_flatidx( states_1, states_2, num_states_1, num_states_2):
     '''
     convert states_1 (first dimension) and states_2 (second) to flat indices
+    reproduces matlab's sub2ind
+    Parameters
+    --------------------
+    states_1: nd.array(N,)
+        indices inrange [0:N-1]
+    states_2: nd.array(B,)
+        indices in range [0:B-1]
+    num_states_1 : N
+    num_states_2: B
     '''
-    # cartesian product (e.g. matrix) of two from_states, shape : |N| x |B|
+   
     combined_stateidx_matrix = [np.tile(states_1, len(states_2)), np.repeat(states_2, len(states_1))]
     # cartesian matrix to one-dimensional index in combined state space
-    idx_flattened = np.ravel_multi_index(combined_stateidx_matrix, (num_states_1, num_states_2))             
+    idx_flattened = np.ravel_multi_index(combined_stateidx_matrix, (num_states_1, num_states_2), order='F') # order F guarantees that the generated indices increase monotonously             
     
     return  idx_flattened
 
@@ -148,6 +161,7 @@ def substates_to_flatidx( states_1, states_2, num_states_1, num_states_2):
 def normalize(from_states, probs):
     '''
     the probabilities transition probs originating from same state in array from_states have to sum to 1 
+    NOTE: supports only non-zero states
     '''
     index_sets = [np.argwhere(i==from_states) for i in np.unique(from_states)]
     for index_set in index_sets: # set of unique from_state indices
@@ -174,20 +188,19 @@ class GMMNoteTrackingObservationModel(ObservationModel):
 
     """
 
-    def __init__(self, pattern_files, state_space):
+    def __init__(self,  state_space):
         # save the parameters
-        self.pattern_files = pattern_files
         self.state_space = state_space
         # define the pointers of the log densities
 #         pointers = np.zeros(state_space.num_states, dtype=np.uint32)
       
 
 #         gmms = pattern_files[0]
-            # number of fitted GMMs for this pattern
-        pointers = np.array(range(state_space.num_states))
-
+        self.pointers = np.array( range(state_space.num_states), dtype=np.uint32)
+        # each space has a separate GMM
+        self.num_gmms = state_space.num_states 
         # instantiate a ObservationModel with the pointers
-        super(GMMNoteTrackingObservationModel, self).__init__(pointers)
+        super(GMMNoteTrackingObservationModel, self).__init__(self.pointers)
 
     def log_densities(self, observations):
         """
@@ -207,14 +220,92 @@ class GMMNoteTrackingObservationModel(ObservationModel):
         # number of GMMs of all patterns
         num_gmms = sum([len(pattern) for pattern in self.pattern_files])
         # init the densities
-        log_densities = np.empty((len(observations), num_gmms), dtype=np.float)
-        # define the observation densities
-        i = 0
-        for pattern in self.pattern_files:
-            for gmm in pattern:
-                # get the predictions of each GMM for the observations
-                log_densities[:, i] = gmm.score(observations)
-                i += 1
+        densities = np.ones((len(observations), self.state_space.num_states), dtype=np.float)
+        log_densities = np.log(densities)
         # return the densities
         return log_densities
 
+class GMMNotePatternTrackingObservationModel(ObservationModel):
+    """
+    Observation model for GMM based beat tracking with a HMM.
+
+    Parameters
+    ----------
+    pattern_files : list
+        List with files representing the rhythmic patterns, one entry per
+        pattern; each pattern being a list with fitted GMMs.
+    state_space : :class:`MultiPatternStateSpace` instance
+        Multi pattern state space.
+
+    References
+    ----------
+    .. [1] Florian Krebs, Sebastian B�ck and Gerhard Widmer,
+           "Rhythmic Pattern Modeling for Beat and Downbeat Tracking in Musical
+           Audio",
+           Proceedings of the 14th International Society for Music Information
+           Retrieval Conference (ISMIR), 2013.
+
+    """
+
+    def __init__(self,  bar_om, note_om ):
+        
+        # define the pointers of the joint log densities
+        pointers_joint = np.zeros(bar_om.state_space.num_states * note_om.state_space.num_states, dtype=np.uint32)
+        
+        self.bar_om = bar_om
+        self.note_om = note_om
+        bar_pointers = bar_om.pointers
+        note_pointers = note_om.pointers
+        num_note_gmms = note_om.num_gmms
+        
+        num_bar_gmms_prev_pattern = 0
+        self.patterns_num_gmms = []  
+        for p, gmms in enumerate(bar_om.pattern_files):
+            # number of fitted GMMs for current pattern bar observation
+            num_gmms_bar = len(gmms)
+            self.patterns_num_gmms.append(num_gmms_bar)
+            # pointers to GMMs for current pattern
+            bar_pointers_pattern =  bar_pointers[bar_om.state_space.state_patterns == p]
+            bar_pointers_pattern -= num_bar_gmms_prev_pattern  
+            ## pointers of joint state space; the states are the indices  
+            pointers_flattened = substates_to_flatidx( bar_pointers_pattern, note_pointers, num_gmms_bar, num_note_gmms) 
+            pointers_flattened += num_bar_gmms_prev_pattern * num_note_gmms
+            pointers_joint = np.hstack((pointers_joint, pointers_flattened))
+            
+            num_bar_gmms_prev_pattern = num_gmms_bar
+        self.pointers_joint = pointers_joint
+        # instantiate a ObservationModel with the pointers
+        super(GMMNotePatternTrackingObservationModel, self).__init__(pointers_joint)
+
+    def log_densities(self, observations):
+        """
+        Computes the log densities of the observations using (a) GMM(s).
+
+        Parameters
+        ----------
+        observations : numpy array
+            Observations (i.e. multi-band spectral flux features).
+
+        Returns
+        -------
+        numpy array
+            Log densities of the observations.
+
+        """
+        joint_log_densities = []
+        
+        bar_log_densities = self.bar_om.log_densities(observations) # size O x (num_bar_gmms -> for each pattern)
+        note_log_densities = self.note_om.log_densities(observations) # size O x num_note_gmms
+        
+        num_note_gmms = self.note_om.num_gmms
+        num_bar_gmms_prev_pattern = 0
+        for p in range(len(self.patterns_num_gmms)):
+            curr_num_bar_gmms = self.patterns_num_gmms[p] # for ccurent pattern
+                
+            print bar_log_densities[:, num_bar_gmms_prev_pattern:num_bar_gmms_prev_pattern+curr_num_bar_gmms]
+            # *3
+        # return the densities
+        return joint_log_densities
+def create_join_log_densities():
+    pass
+    

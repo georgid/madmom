@@ -288,25 +288,25 @@ class BeatTransitionModel(TransitionModel):
 
     """
 
-    def __init__(self, state_space, transition_lambda):
+    def __init__(self, bar_state_space, transition_lambda):
         # save attributes
-        self.state_space = state_space
+        self.state_space = bar_state_space
         self.transition_lambda = float(transition_lambda)
         # same tempo transitions probabilities within the state space is 1
         # Note: use all states, but remove all first states because there are
         #       no same tempo transitions into them
-        states = np.arange(state_space.num_states, dtype=np.uint32)
-        states = np.setdiff1d(states, state_space.first_states)
+        states = np.arange(bar_state_space.num_states, dtype=np.uint32)
+        states = np.setdiff1d(states, bar_state_space.first_states)
         prev_states = states - 1
         probabilities = np.ones_like(states, dtype=np.float)
         # tempo transitions occur at the boundary between beats
         # Note: connect the beat state space with itself, the transitions from
         #       the last states to the first states follow an exponential tempo
         #       transition (with the tempi given as intervals)
-        to_states = state_space.first_states
-        from_states = state_space.last_states
-        from_int = state_space.state_intervals[from_states].astype(np.float)
-        to_int = state_space.state_intervals[to_states].astype(np.float)
+        to_states = bar_state_space.first_states
+        from_states = bar_state_space.last_states
+        from_int = bar_state_space.state_intervals[from_states].astype(np.float)
+        to_int = bar_state_space.state_intervals[to_states].astype(np.float)
         prob = exponential_transition(from_int, to_int, self.transition_lambda)
         # use only the states with transitions to/from != 0
         from_prob, to_prob = np.nonzero(prob)
@@ -353,34 +353,34 @@ class BarTransitionModel(TransitionModel):
 
     """
 
-    def __init__(self, state_space, transition_lambda):
+    def __init__(self, bar_state_space, transition_lambda):
         # expand transition_lambda to a list if a single value is given
         if not isinstance(transition_lambda, list):
-            transition_lambda = [transition_lambda] * state_space.num_beats
-        if state_space.num_beats != len(transition_lambda):
+            transition_lambda = [transition_lambda] * bar_state_space.num_beats
+        if bar_state_space.num_beats != len(transition_lambda):
             raise ValueError('length of `transition_lambda` must be equal to '
-                             '`num_beats` of `state_space`.')
+                             '`num_beats` of `bar_state_space`.')
         # save attributes
-        self.state_space = state_space
+        self.state_space = bar_state_space
         self.transition_lambda = transition_lambda
         # TODO: this could be unified with the BeatTransitionModel
         # same tempo transitions probabilities within the state space is 1
         # Note: use all states, but remove all first states of the individual
         #       beats, because there are no same tempo transitions into them
-        states = np.arange(state_space.num_states, dtype=np.uint32)
-        states = np.setdiff1d(states, state_space.first_states)
+        states = np.arange(bar_state_space.num_states, dtype=np.uint32)
+        states = np.setdiff1d(states, bar_state_space.first_states)
         prev_states = states - 1
         probabilities = np.ones_like(states, dtype=np.float)
         # tempo transitions occur at the boundary between beats (unless the
         # corresponding transition_lambda is set to None)
-        for beat in range(state_space.num_beats):
+        for beat in range(bar_state_space.num_beats):
             # connect to the first states of the actual beat
-            to_states = state_space.first_states[beat]
+            to_states = bar_state_space.first_states[beat]
             # connect from the last states of the previous beat
-            from_states = state_space.last_states[beat - 1]
+            from_states = bar_state_space.last_states[beat - 1]
             # transition follow an exponential tempo distribution
-            from_int = state_space.state_intervals[from_states]
-            to_int = state_space.state_intervals[to_states]
+            from_int = bar_state_space.state_intervals[from_states]
+            to_int = bar_state_space.state_intervals[to_states]
             prob = exponential_transition(from_int.astype(np.float),
                                           to_int.astype(np.float),
                                           transition_lambda[beat])
@@ -480,14 +480,14 @@ class RNNBeatTrackingObservationModel(ObservationModel):
 
     """
 
-    def __init__(self, state_space, observation_lambda):
+    def __init__(self, bar_state_space, observation_lambda):
         self.observation_lambda = observation_lambda
         # compute observation pointers
         # always point to the non-beat densities
-        pointers = np.zeros(state_space.num_states, dtype=np.uint32)
+        pointers = np.zeros(bar_state_space.num_states, dtype=np.uint32)
         # unless they are in the beat range of the state space
         border = 1. / observation_lambda
-        pointers[state_space.state_positions < border] = 1
+        pointers[bar_state_space.state_positions < border] = 1
         # instantiate a ObservationModel with the pointers
         super(RNNBeatTrackingObservationModel, self).__init__(pointers)
 
@@ -539,16 +539,16 @@ class RNNDownBeatTrackingObservationModel(ObservationModel):
 
     """
 
-    def __init__(self, state_space, observation_lambda):
+    def __init__(self, bar_state_space, observation_lambda):
         self.observation_lambda = observation_lambda
         # compute observation pointers
         # always point to the non-beat densities
-        pointers = np.zeros(state_space.num_states, dtype=np.uint32)
+        pointers = np.zeros(bar_state_space.num_states, dtype=np.uint32)
         # unless they are in the beat range of the state space
         border = 1. / observation_lambda
-        pointers[state_space.state_positions % 1 < border] = 1
+        pointers[bar_state_space.state_positions % 1 < border] = 1
         # the downbeat (i.e. the first beat range) points to density column 2
-        pointers[state_space.state_positions < border] = 2
+        pointers[bar_state_space.state_positions < border] = 2
         # instantiate a ObservationModel with the pointers
         super(RNNDownBeatTrackingObservationModel, self).__init__(pointers)
 
@@ -602,12 +602,12 @@ class GMMPatternTrackingObservationModel(ObservationModel):
 
     """
 
-    def __init__(self, pattern_files, state_space):
+    def __init__(self, pattern_files, bar_state_space):
         # save the parameters
         self.pattern_files = pattern_files
-        self.state_space = state_space
+        self.state_space = bar_state_space
         # define the pointers of the log densities
-        pointers = np.zeros(state_space.num_states, dtype=np.uint32)
+        pointers = np.zeros(bar_state_space.num_states, dtype=np.uint32)
         patterns = self.state_space.state_patterns
         positions = self.state_space.state_positions
         # Note: the densities of all GMMs are just stacked on top of each
@@ -627,6 +627,7 @@ class GMMPatternTrackingObservationModel(ObservationModel):
                                        num_beats + densities_idx_offset)
             # increase the offset by the number of GMMs
             densities_idx_offset += num_gmms
+        self.pointers = pointers
         # instantiate a ObservationModel with the pointers
         super(GMMPatternTrackingObservationModel, self).__init__(pointers)
 
