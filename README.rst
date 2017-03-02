@@ -2,6 +2,16 @@
 madmom
 ======
 
+This fork adds a hidden state of a musical note (in short note state). 
+The joint bar+note state space is a Cartesian product of the existing 
+ BarStateSpace and the new NoteStateSpace. 
+ NOTE: There is no class for joint BarNoteStateSpace, the Cartesian musltiplication is handled inside the BarNoteTransitionModel and GMMNotePatternTrackingObservationModel
+
+Modifications to the original code:
+- [saving variables](https://github.com/georgid/madmom/blob/master/madmom/features/beats_hmm.py#L394)
+--------------------------------------------------
+
+
 Madmom is an audio signal processing library written in Python with a strong
 focus on music information retrieval (MIR) tasks.
 

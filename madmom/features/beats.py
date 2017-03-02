@@ -11,9 +11,6 @@ from __future__ import absolute_import, division, print_function
 
 import numpy as np
 
-from madmom.features.bar_notes_hmm import NoteStateSpace, BarNoteTransitionModel_old,\
-    GMMNoteTrackingObservationModel, NoteTransitionModel, BarNoteTransitionModel,\
-    BarNoteStateSpace
 from madmom.processors import Processor, SequentialProcessor, ParallelProcessor
 from madmom.audio.signal import smooth as smooth_signal
 from madmom.ml.nn import average_predictions
@@ -943,9 +940,9 @@ class DBNBeatTrackingProcessor(Processor):
         # transition model
         self.tm = Tm(self.st, transition_lambda)
         # observation model
-        self.om = Om(self.st, observation_lambda)
+        self.bar_note_om = Om(self.st, observation_lambda)
         # instantiate a HMM
-        self.hmm = Hmm(self.tm, self.om, None)
+        self.hmm = Hmm(self.tm, self.bar_note_om, None)
         # save variables
         self.correct = correct
         self.threshold = threshold
@@ -987,7 +984,7 @@ class DBNBeatTrackingProcessor(Processor):
         if self.correct:
             # for each detection determine the "beat range", i.e. states where
             # the pointers of the observation model are 1
-            beat_range = self.om.pointers[path]
+            beat_range = self.bar_note_om.pointers[path]
             # get all change points between True and False
             idx = np.nonzero(np.diff(beat_range))[0] + 1
             # if the first frame is in the beat range, add a change at frame 0
@@ -1011,7 +1008,7 @@ class DBNBeatTrackingProcessor(Processor):
             # of the observation model for that state must be 1
             # Note: interpolation and alignment of the beats to be at state 0
             #       does not improve results over this simple method
-            beats = beats[self.om.pointers[path[beats]] == 1]
+            beats = beats[self.bar_note_om.pointers[path[beats]] == 1]
         # convert the detected beats to seconds and return them
         return (beats + first) / float(self.fps)
 
@@ -1526,10 +1523,17 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
     MIN_BPM = [55, 60]
     MAX_BPM = [205, 225]
     NUM_TEMPI = [None, None]
+    
     # TODO: make this parametric
     # Note: if lambda is given as a list, the individual values represent the
     #       lambdas for each transition into the beat at this index position
     TRANSITION_LAMBDA = [100, 100]
+
+
+    MIN_BPM = [55]
+    MAX_BPM = [205]
+    NUM_TEMPI = [None]
+    TRANSITION_LAMBDA = [100]
 
     def __init__(self, pattern_files, min_bpm=MIN_BPM, max_bpm=MAX_BPM,
                  num_tempi=NUM_TEMPI, transition_lambda=TRANSITION_LAMBDA,
@@ -1589,16 +1593,15 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
                                         max_interval[p], num_tempi[p])
             bar_transition_model = BarTransitionModel(bar_state_space,
                                                   transition_lambda[p])
-            
             state_spaces.append(bar_state_space)
             transition_models.append(bar_transition_model)
         # create multi pattern state space, transition and observation model
         self.st = MultiPatternStateSpace(state_spaces)
         self.tm = MultiPatternTransitionModel(transition_models)
-        self.om = GMMPatternTrackingObservationModel(gmms, self.st)
+        self.bar_note_om = GMMPatternTrackingObservationModel(gmms, self.st)
         # instantiate a HMM
-#         self.hmm = Hmm(self.tm, self.om, self.nom, None)
-        self.hmm = Hmm(self.tm, self.om, None)
+#         self.hmm = Hmm(self.tm, self.bar_note_om, self.nom, None)
+        self.hmm = Hmm(self.tm, self.bar_note_om, None)
 
     def process(self, activations):
         """

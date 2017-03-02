@@ -391,11 +391,9 @@ class BarTransitionModel(TransitionModel):
             probabilities = np.hstack((probabilities, prob[prob != 0]))
         
         ### stored to be re-used in BarNoteTransitionModel 
-        self.states = states
+        self.to_states = states
         self.prev_states = prev_states
-        self.probabilities = probabilities
-        
-        
+        self.probs = probabilities
         # make the transitions sparse
         transitions = self.make_sparse(states, prev_states, probabilities)
         # instantiate a TransitionModel
@@ -627,10 +625,8 @@ class GMMPatternTrackingObservationModel(ObservationModel):
                                        num_beats + densities_idx_offset)
             # increase the offset by the number of GMMs
             densities_idx_offset += num_gmms
-        self.pointers = pointers
         # instantiate a ObservationModel with the pointers
         super(GMMPatternTrackingObservationModel, self).__init__(pointers)
-
     def log_densities(self, observations):
         """
         Computes the log densities of the observations using (a) GMM(s).

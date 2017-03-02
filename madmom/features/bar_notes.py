@@ -2,6 +2,8 @@
 # pylint: disable=no-member
 # pylint: disable=invalid-name
 # pylint: disable=too-many-arguments
+from madmom.features.bar_note_observation import GMMNoteObservationModel,\
+    GMMNotePatternTrackingObservationModel
 
 
 '''
@@ -13,9 +15,7 @@ import numpy as np
 
 from madmom.processors import Processor
 from madmom.features.bar_notes_hmm import NoteStateSpace, NoteTransitionModel,\
-    BarNoteStateSpace, BarNoteTransitionModel, GMMNoteTrackingObservationModel,\
-    GMMNotePatternTrackingObservationModel
-
+    BarNoteStateSpace, BarNoteTransitionModel
 
 
 
@@ -105,14 +105,22 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
            [ 4.66,  4.  ]])
     """
     # TODO: this should not be lists (lists are mutable!)
-    MIN_BPM = [55, 60]
-    MAX_BPM = [205, 225]
-    NUM_TEMPI = [None, None]
+#     MIN_BPM = [55, 60]
+#     MAX_BPM = [205, 225]
+#     NUM_TEMPI = [None, None]
+#     # TODO: make this parametric
+#     # Note: if lambda is given as a list, the individual values represent the
+#     #       lambdas for each transition into the beat at this index position
+#     TRANSITION_LAMBDA = [100, 100]
+    
+    MIN_BPM = [55]
+    MAX_BPM = [205]
+    NUM_TEMPI = [None]
     # TODO: make this parametric
     # Note: if lambda is given as a list, the individual values represent the
     #       lambdas for each transition into the beat at this index position
-    TRANSITION_LAMBDA = [100, 100]
-
+    TRANSITION_LAMBDA = [100]
+    
     def __init__(self, pattern_files, min_bpm=MIN_BPM, max_bpm=MAX_BPM,
                  num_tempi=NUM_TEMPI, transition_lambda=TRANSITION_LAMBDA,
                  downbeats=False, fps=None, **kwargs):
@@ -151,6 +159,12 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
         # check that at least one pattern is given
         if not pattern_files:
             raise ValueError('at least one rhythmical pattern must be given.')
+        
+        # the note state space and transition model are same for all patterns
+        self.note_state_space = NoteStateSpace(1)
+        note_transition_model = NoteTransitionModel(self.note_state_space)
+#         bar_note_state_space = BarNoteStateSpace(bar_state_space, note_state_space)
+
         # load the patterns
         for p, pattern_file in enumerate(pattern_files):
             with open(pattern_file, 'rb') as f:
@@ -171,25 +185,24 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
                                         max_interval[p], num_tempi[p])
             bar_transition_model = BarTransitionModel(bar_state_space,
                                                   transition_lambda[p])
-            note_state_space = NoteStateSpace()
-            note_transition_model = NoteTransitionModel(note_state_space)
-            bar_note_state_space = BarNoteStateSpace(bar_state_space, note_state_space)
+
             
             bar_note_transition_model = BarNoteTransitionModel(bar_transition_model, note_transition_model)
             
             state_spaces.append(bar_state_space)
             transition_models.append(bar_note_transition_model)
+        
         # create multi pattern state space, transition and observation model
         self.st = MultiPatternStateSpace(state_spaces)
         self.tm = MultiPatternTransitionModel(transition_models)
         
-        note_om = GMMNoteTrackingObservationModel(note_state_space)
+        note_om = GMMNoteObservationModel(self.note_state_space)
         
         bar_om = GMMPatternTrackingObservationModel(gmms, self.st)
         
-        self.om = GMMNotePatternTrackingObservationModel(bar_om, note_om)
+        self.bar_note_om = GMMNotePatternTrackingObservationModel(bar_om, note_om)
         # instantiate a HMM
-        self.hmm = Hmm(self.tm, self.om, None)
+        self.hmm = Hmm(self.tm, self.bar_note_om, None)
 
     def process(self, activations):
         """
@@ -209,11 +222,14 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
         # get the best state path by calling the viterbi algorithm
 #         path, _ = self.hmm.viterbi(activations, note_activations)
         path, _ = self.hmm.viterbi(activations)
+        #TODO: decompose combined state-space
+        num_bar_states = len(self.st.state_positions) # NOT SURE what happens with more than 1 pattern
+        num_note_states = self.note_state_space.num_states
         
-        #TODO: decompose combined state-space 
+        (path_indices_bar, path_indices_note) = np.unravel_index(path, (num_bar_states, num_note_states), order='F')
         
         # the positions inside the pattern (0..num_beats)
-        positions = self.st.state_positions[path]
+        positions = self.st.state_positions[path_indices_bar]
         # corresponding beats (add 1 for natural counting)
         beat_numbers = positions.astype(int) + 1
         # transitions are the points where the beat numbers change

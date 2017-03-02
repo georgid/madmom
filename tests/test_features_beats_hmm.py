@@ -402,24 +402,24 @@ class TestRNNBeatTrackingObservationModelClass(unittest.TestCase):
 
     def setUp(self):
         btss = BeatStateSpace(1, 4)
-        self.om = RNNBeatTrackingObservationModel(btss, 4)
+        self.bar_note_om = RNNBeatTrackingObservationModel(btss, 4)
         self.obs = np.asarray([1, 0.1, 0.01, 0], dtype=np.float32)
 
     def test_types(self):
-        self.assertIsInstance(self.om.pointers, np.ndarray)
-        self.assertIsInstance(self.om.densities(self.obs), np.ndarray)
-        self.assertIsInstance(self.om.log_densities(self.obs), np.ndarray)
-        self.assertTrue(self.om.pointers.dtype == np.uint32)
-        self.assertTrue(self.om.densities(self.obs).dtype == np.float)
-        self.assertTrue(self.om.log_densities(self.obs).dtype == np.float)
+        self.assertIsInstance(self.bar_note_om.pointers, np.ndarray)
+        self.assertIsInstance(self.bar_note_om.densities(self.obs), np.ndarray)
+        self.assertIsInstance(self.bar_note_om.log_densities(self.obs), np.ndarray)
+        self.assertTrue(self.bar_note_om.pointers.dtype == np.uint32)
+        self.assertTrue(self.bar_note_om.densities(self.obs).dtype == np.float)
+        self.assertTrue(self.bar_note_om.log_densities(self.obs).dtype == np.float)
 
     def test_values(self):
-        self.assertTrue(np.allclose(self.om.pointers,
+        self.assertTrue(np.allclose(self.bar_note_om.pointers,
                                     [1, 1, 0, 1, 0, 0, 1, 0, 0, 0]))
-        self.assertTrue(np.allclose(self.om.densities(self.obs),
+        self.assertTrue(np.allclose(self.bar_note_om.densities(self.obs),
                                     [[0, 1], [0.3, 0.1],
                                      [0.33, 0.01], [1. / 3, 0]]))
-        self.assertTrue(np.allclose(self.om.log_densities(self.obs),
+        self.assertTrue(np.allclose(self.bar_note_om.log_densities(self.obs),
                                     [[-np.inf, 0], [-1.20397281, -2.30258508],
                                      [-1.10866262, -4.60517021],
                                      [-1.09861229, -np.inf]]))
