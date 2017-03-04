@@ -10,7 +10,7 @@ Created on Feb 18, 2017
 '''
 import numpy as np
 
-from madmom.ml.hmm import TransitionModel, ObservationModel
+from madmom.ml.hmm import TransitionModel
 
 
 class SingleNoteStateSpace(object):
@@ -20,7 +20,6 @@ class SingleNoteStateSpace(object):
 class NoteStateSpace(object):
     def __init__(self, num_notes):
         self.num_states = 0 # initialize
-        self.states = [] 
         
         self.num_notes = num_notes
         for i in range(self.num_notes):
@@ -33,20 +32,31 @@ class NoteTransitionModel(object):
         self.state_space = note_state_space
         
         # define some dummy transitions
-        if self.state_space.num_states == 2:
-            self.prev_states = np.array([0,1,0,1])
-            self.to_states = np.array([0,0,1,1])
-            self.probs = np.array([1, 1, 0, 0])  
+        if self.num_states == 2:
+            self.prev_states = np.array([1,0])
+            self.to_states = np.array([0,1])
+            self.probs = np.array([1, 1])  
         
-        elif self.state_space.num_states == 1:
+        elif self.num_states == 1:
             self.prev_states = np.array([0])
             self.to_states = np.array([0])
-            self.probs = np.array([1]) 
-            
+            self.probs = np.array([1])
+        elif self.num_states == 5:
+            self.prev_states = np.array([0,1,2,3,4])
+            self.to_states = np.array([1,2,3,4,0])
+            self.probs = np.array([1, 1, 1, 1, 1])  
+    
+    @property
+    def num_states(self):
+        return self.state_space.num_states        
 
 class BarNoteStateSpace():
+    '''
+    not used
+    '''
     def __init__(self, bar_state_space, note_state_space):
         pass
+
 
 class BarNoteTransitionModel(TransitionModel):
     '''
@@ -94,73 +104,31 @@ class BarNoteTransitionModel(TransitionModel):
         super(BarNoteTransitionModel, self).__init__(*transitions)
 
 
-class BarNoteTransitionModel_old(TransitionModel):
-    '''
-    extends the bar transition model: multiplies each bar state by the L states
-    fist bar point state is in (0,L-1), second in (1*L, 2L-1) , n-th in ( (n-1)*L, n*L-1)
-    '''
-    def __init__(self, bar_transition_model, note_transition_model ):
-        
-        self.bar_transition_model = bar_transition_model
-        #  note bar_states 
-        self.note_state_space = note_transition_model.state_space
-        num_note_transitions  = len(note_transition_model.states) # non-zero prob. transitions
-        
-#         bar_states = np.repeat(self.bar_transition_model.bar_states, num_note_transitions, axis=1   )
-        bar_states = self.bar_transition_model.states
-        
-#         prev_bar_states = np.repeat(self.bar_transition_model.prev_bar_states * num_note_transitions)
-        prev_bar_states = self.bar_transition_model.prev_states
-        
-        bar_probabilities = self.bar_transition_model.probabilities
-        
-        # dense transitions of combined bar space and note space  
-        bar_note_states = []
-        prev_bar_note_states = []
-        bar_note_probs = []
-        
-        ### convert to new state numbers: each bar state spans new num_note_states  
-        bar_states = bar_states * self.note_state_space.num_states
-        prev_bar_states = prev_bar_states * self.note_state_space.num_states
-        for state, prev_state, prob in zip(bar_states, prev_bar_states, bar_probabilities):
-            for l in range(num_note_transitions):
-                bar_note_states.append(state + note_transition_model.states[l])
-                prev_bar_note_states.append(prev_state + note_transition_model.prev_states[l])
-                bar_note_probs.append(prob * note_transition_model.probabilities[l])
-        
-                
-        bar_note_states = np.array(bar_note_states)
-        prev_bar_note_states = np.array(prev_bar_note_states)
-        bar_note_probs = np.array(bar_note_probs)
-
-        bar_note_probs = normalize(prev_bar_note_states, bar_note_probs)
-      
-        # make the transitions sparse
-        transitions = self.make_sparse(bar_note_states, prev_bar_note_states, bar_note_probs)
-        # instantiate a TransitionModel
-        super(BarNoteTransitionModel_old, self).__init__(*transitions)
-
-
-def substates_to_flatidx( states_1, states_2, num_states_1, num_states_2):
+def substates_to_flatidx( states_1, states_2, max_states_1, max_states_2):
     '''
     convert states_1 (first dimension) and states_2 (second) to flat indices
-    Let S is length of states_1, U is length of states_2 
-    Then the new joint indices are: 0 to S-1, u=0;  S to 2S-1, u=1; ... n*S to (n+1)*S-1, u=(the rest) 
+    Let S (max_states_1) is max val of states_1, U (max_states_2) is max val of states_2 
+    Then the new joint indices are: 0 to S-1, u=0;  S to 2*S-1, u=1; ... n*S to (n+1)*S-1, u=(the rest) 
     
     reproduces matlab's sub2ind
+    
     Parameters
     --------------------
     states_1: nd.array(N,dtype=np.uint32)
         indices inrange [0:N-1]
     states_2: nd.array(B,)
         indices in range [0:B-1]
-    num_states_1 : N
-    num_states_2: B
+    max_states_1 : (<= N)
+    max_states_2: (<= B)
+    
+    Returns
+    ---------------------
+    idx_flattened: nd.array shape: (max_states_1 x max_states_2 , )
     '''
    
     combined_stateidx_matrix = [np.tile(states_1, len(states_2)), np.repeat(states_2, len(states_1))]
     # cartesian matrix to one-dimensional index in combined state space
-    idx_flattened = np.ravel_multi_index(combined_stateidx_matrix, (num_states_1, num_states_2), order='F') # order F guarantees that the generated indices increase monotonously             
+    idx_flattened = np.ravel_multi_index(combined_stateidx_matrix, (max_states_1, max_states_2), order='F') # order F guarantees that the generated indices increase monotonously             
     idx_flattened = idx_flattened.astype(np.uint32)
     
     return  idx_flattened

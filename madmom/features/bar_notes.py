@@ -17,6 +17,7 @@ from madmom.processors import Processor
 from madmom.features.bar_notes_hmm import NoteStateSpace, NoteTransitionModel,\
     BarNoteStateSpace, BarNoteTransitionModel
 
+NUM_NOTES = 5
 
 
 
@@ -161,7 +162,7 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
             raise ValueError('at least one rhythmical pattern must be given.')
         
         # the note state space and transition model are same for all patterns
-        self.note_state_space = NoteStateSpace(1)
+        self.note_state_space = NoteStateSpace(NUM_NOTES)
         note_transition_model = NoteTransitionModel(self.note_state_space)
 #         bar_note_state_space = BarNoteStateSpace(bar_state_space, note_state_space)
 
@@ -210,9 +211,9 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
 
         Parameters
         ----------
-        activations : numpy array
-            Activations (i.e. multi-band spectral features).
-    
+        activations : numpy array shape (observations, 3)
+            dimensions  :,0:1 SpectraL Flux Activations (i.e. multi-band spectral features).
+            dimension   :,2 Note pitch  
         Returns
         -------
         beats : numpy array
@@ -220,13 +221,16 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
 
         """
         # get the best state path by calling the viterbi algorithm
-#         path, _ = self.hmm.viterbi(activations, note_activations)
         path, _ = self.hmm.viterbi(activations)
         #TODO: decompose combined state-space
         num_bar_states = len(self.st.state_positions) # NOT SURE what happens with more than 1 pattern
         num_note_states = self.note_state_space.num_states
         
         (path_indices_bar, path_indices_note) = np.unravel_index(path, (num_bar_states, num_note_states), order='F')
+        
+        # print decoded note states sequence
+#         for i in path_indices_note:
+#             print i
         
         # the positions inside the pattern (0..num_beats)
         positions = self.st.state_positions[path_indices_bar]

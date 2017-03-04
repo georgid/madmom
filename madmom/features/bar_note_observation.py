@@ -6,12 +6,35 @@
 import numpy as np
 from madmom.ml.hmm import ObservationModel
 from madmom.features.bar_notes_hmm import substates_to_flatidx
+from madmom.processors import SequentialProcessor
+import sys
 
 '''
 Created on Feb 28, 2017
 
 @author: joro
 '''
+
+class CombinedFeatureProcessor(SequentialProcessor):
+    '''
+    The extracted feature with SequentialProcessor.process() is combined with another externally extracted feature
+    
+    Returns
+    -------------------------
+    data_plus_external_feature: shape(data.shape[0], data.shape[1] + EXTERNAL_FEATURE_SHAPE)
+    
+    Example usage: 
+    in_processor = CombinedFeatureProcessor([sig, frames, filt, log, diff, mb])
+    '''
+    def process(self, data):
+        
+        data = super(CombinedFeatureProcessor, self).process(data)
+        # dummy. TODO: add here extraction of other feature
+        EXTERNAL_FEATURE_DIMENSION = 1
+        data_plus_external_feature = np.hstack((data, np.zeros((data.shape[0],EXTERNAL_FEATURE_DIMENSION)) ))
+        return data_plus_external_feature
+        
+
 class GMMNoteObservationModel(ObservationModel):
     """
     Observation model for GMM based beat tracking with a HMM.
@@ -26,7 +49,7 @@ class GMMNoteObservationModel(ObservationModel):
 
     References
     ----------
-
+    
 
     """
 
@@ -56,8 +79,9 @@ class GMMNoteObservationModel(ObservationModel):
             Log densities of the observations.
 
         """
-        # init the densities
+        # dummy densities: TODO define densities here
         log_densities = np.zeros((len(observations), self.state_space.num_states), dtype=np.float)
+        
         # return the densities
         return log_densities
 
@@ -78,18 +102,16 @@ class GMMNotePatternTrackingObservationModel(ObservationModel):
         self.bar_note_om = note_om
         bar_pointers = bar_om.pointers
         note_pointers = note_om.pointers
-        num_note_gmms = note_om.num_gmms
+        num_note_gmms = note_om.num_gmms # if you change number of note gmms, you might need to change also logic of substates_to_flatidx
         
-        self.patterns_num_gmms = []  
-        
+        which_pattern = 0 # it works with one pattern only
         # number of fitted GMMs of bar observation for current pattern 
-        num_gmms_bar = len(bar_om.pattern_files[0])
-        self.patterns_num_gmms.append(num_gmms_bar)
+        self.num_gmms_bar = len(bar_om.pattern_files[which_pattern])
         
         # pointers to GMMs for current pattern
-        bar_pointers_pattern =  bar_pointers[bar_om.state_space.state_patterns == 0]
+        bar_pointers_pattern =  bar_pointers[bar_om.state_space.state_patterns == which_pattern]
         ## pointers of joint state space; the states are the indices  
-        pointers_flattened = substates_to_flatidx( bar_pointers_pattern, note_pointers, num_gmms_bar, num_note_gmms) 
+        pointers_flattened = substates_to_flatidx( bar_pointers_pattern, note_pointers, self.num_gmms_bar, num_note_gmms) 
             
         # instantiate a ObservationModel with the pointers
         super(GMMNotePatternTrackingObservationModel, self).__init__(pointers_flattened)
@@ -109,23 +131,24 @@ class GMMNotePatternTrackingObservationModel(ObservationModel):
             combined Log densities of the observations.
 
         """
-        
+        if observations.shape[1] != 3:
+            sys.exit('expecting a 3-dimensioanl feature: \
+             two-dimnesional spectral flux + one-dimnesional pitch. Got intstead {} dimensional featrure '.format(observations.shape[1]))
         # compute densities with the two observation models
-        bar_log_densities = self.bar_om.log_densities(observations) # size O x (num_bar_gmms -> for each pattern)
-        note_log_densities = self.bar_note_om.log_densities(observations) # size O x num_note_gmms
+        bar_log_densities = self.bar_om.log_densities(observations[:,:2]) # size O x (num_bar_gmms -> for each pattern)
+        note_log_densities = self.bar_note_om.log_densities(observations[:,2]) # size O x num_note_gmms
         
 
-#         num_bar_gmms_prev_pattern = 0
-        for p in range(len(self.patterns_num_gmms)):
-            curr_num_bar_gmms = self.patterns_num_gmms[p] # for current pattern
-            joint_log_densities = self._create_join_log_densities( bar_log_densities, note_log_densities, curr_num_bar_gmms)
+        curr_num_bar_gmms = self.num_gmms_bar # for current pattern
+        joint_log_densities = self._create_join_log_densities( bar_log_densities, note_log_densities, curr_num_bar_gmms)
         # return the densities
         return joint_log_densities
 
 
     def _create_join_log_densities(self, bar_log_densities, note_log_densities, num_bar_gmms):
         '''
-        p(y^f, y^p | x_l) = p(y^f | x_b) * p (y^p | x_n), for each b \in |B| and for each n \in |N|
+        joint_log_densities: the LHS of
+        p(y^f, y^p | x) = p(y^f | b) * p (y^p | n), for each b \in |num_bar_gmms| and for each n \in |num_note_gmms|
         
         '''
         num_observations = bar_log_densities.shape[0]

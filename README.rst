@@ -3,12 +3,22 @@ madmom
 ======
 
 This fork adds a hidden state of a musical note (in short note state). 
-The joint bar+note state space is a Cartesian product of the existing 
- BarStateSpace and the new NoteStateSpace. 
- NOTE: There is no class for joint BarNoteStateSpace, the Cartesian musltiplication is handled inside the BarNoteTransitionModel and GMMNotePatternTrackingObservationModel
+It is however generic enough and can be used with any other musical concept as hidden state. 
+For this purpose the NoteTransitionModel and and GMMNotePatternTrackingObservationModel classes are dummy
+
+The joint bar+note state space is a Cartesian product of the existing BarStateSpace and the new NoteStateSpace. 
+ 
+NOTE: There is no class for joint BarNoteStateSpace, the Cartesian multiplication is handled inside the BarNoteTransitionModel and GMMNotePatternTrackingObservationModel
+
+NOTE: for the sake of simplicity, it is implemented to work with only [one rhythmic pattern](madmom.models.__init__.PATTERNS_BALLROOM). 
 
 Modifications to the original code:
-- [saving variables](https://github.com/georgid/madmom/blob/master/madmom/features/beats_hmm.py#L394)
+- [saving class variables](https://github.com/georgid/madmom/blob/master/madmom/features/beats_hmm.py#L394)
+
+Usage
+--------
+bin/GMMNotePatternTracker
+
 --------------------------------------------------
 
 

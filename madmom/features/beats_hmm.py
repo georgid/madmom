@@ -655,3 +655,7 @@ class GMMPatternTrackingObservationModel(ObservationModel):
                 i += 1
         # return the densities
         return log_densities
+    
+    @property
+    def num_gmms(self):
+        return sum([len(pattern) for pattern in self.pattern_files])
