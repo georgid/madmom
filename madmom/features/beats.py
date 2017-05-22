@@ -1519,21 +1519,21 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
            [ 3.7 ,  3.  ],
            [ 4.66,  4.  ]])
     """
-    # TODO: this should not be lists (lists are mutable!)
-    MIN_BPM = [55, 60]
-    MAX_BPM = [205, 225]
-    NUM_TEMPI = [None, None]
-    
+#     # TODO: this should not be lists (lists are mutable!)
+    MIN_BPM = [100, 90, 180]
+    MAX_BPM = [150, 250, 250]
+    NUM_TEMPI = [None, None, None]
+     
     # TODO: make this parametric
     # Note: if lambda is given as a list, the individual values represent the
     #       lambdas for each transition into the beat at this index position
-    TRANSITION_LAMBDA = [100, 100]
+    TRANSITION_LAMBDA = [100, 100, 100]
 
 
-    MIN_BPM = [55]
-    MAX_BPM = [205]
-    NUM_TEMPI = [None]
-    TRANSITION_LAMBDA = [100]
+#     MIN_BPM = [55]
+#     MAX_BPM = [205]
+#     NUM_TEMPI = [None]
+#     TRANSITION_LAMBDA = [100]
 
     def __init__(self, pattern_files, min_bpm=MIN_BPM, max_bpm=MAX_BPM,
                  num_tempi=NUM_TEMPI, transition_lambda=TRANSITION_LAMBDA,

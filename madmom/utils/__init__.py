@@ -138,7 +138,7 @@ def search_path(path, recursion_depth=0):
     return sorted(file_list)
 
 
-def search_files(files, suffix=None, recursion_depth=0):
+def search_files(files, suffix=None, recursion_depth=1):
     """
     Returns the files matching the given `suffix`.
 

@@ -2,8 +2,14 @@
 # pylint: disable=no-member
 # pylint: disable=invalid-name
 # pylint: disable=too-many-arguments
+import numpy as np
+
 from madmom.features.bar_note_observation import GMMNoteObservationModel,\
     GMMNotePatternTrackingObservationModel
+from madmom.Params import  USUL_NUM_BEATS
+from pypYIN.MonoNoteParameters import WITH_NOTES_STATES, WITH_MAKAM
+import os
+
 
 
 '''
@@ -11,14 +17,13 @@ Created on Feb 26, 2017
 
 @author: joro
 '''
-import numpy as np
 
 from madmom.processors import Processor
 from madmom.features.bar_notes_hmm import NoteStateSpace, NoteTransitionModel,\
     BarNoteStateSpace, BarNoteTransitionModel
-
-NUM_NOTES = 5
-
+from demo import store_results, determine_file_with_extension
+            
+from pypYIN.MonoNoteParameters import STEPS_PER_SEMITONE, NUM_SEMITONES
 
 
 # class for pattern tracking
@@ -48,83 +53,33 @@ class NotePatternTrackingProcessor(Processor):
     fps : float, optional
         Frames per second.
 
-    Notes
-    -----
-    `min_bpm`, `max_bpm`, `num_tempo_states`, and `transition_lambda` must
-    contain as many items as rhythmic patterns are modeled (i.e. length of
-    `pattern_files`).
-    If a single value is given for `num_tempo_states` and `transition_lambda`,
-    this value is used for all rhythmic patterns.
 
-    Instead of the originally proposed state space and transition model for
-    the DBN [1]_, the more efficient version proposed in [2]_ is used.
-
-    References
-    ----------
-    .. [1] Florian Krebs, Sebastian B�ck and Gerhard Widmer,
-           "Rhythmic Pattern Modeling for Beat and Downbeat Tracking in Musical
-           Audio",
-           Proceedings of the 15th International Society for Music Information
-           Retrieval Conference (ISMIR), 2013.
-    .. [2] Florian Krebs, Sebastian B�ck and Gerhard Widmer,
-           "An Efficient State Space Model for Joint Tempo and Meter Tracking",
-           Proceedings of the 16th International Society for Music Information
-           Retrieval Conference (ISMIR), 2015.
-
-    Examples
-    --------
-    Create a PatternTrackingProcessor from the given pattern files. These
-    pattern files include fitted GMMs for the observation model of the HMM.
-    The returned array represents the positions of the beats and their position
-    inside the bar. The position is given in seconds, thus the expected
-    sampling rate is needed. The position inside the bar follows the natural
-    counting and starts at 1.
-
-    >>> from madmom.models import PATTERNS_BALLROOM
-    >>> proc = PatternTrackingProcessor(PATTERNS_BALLROOM, fps=50)
-    >>> proc  # doctest: +ELLIPSIS
-    <madmom.features.beats.PatternTrackingProcessor object at 0x...>
-
-    Call this PatternTrackingProcessor with a multi-band spectrogram to obtain
-    the beat and downbeat positions. The parameters of the spectrogram have to
-    correspond to those used to fit the GMMs.
-
-    >>> from madmom.processors import SequentialProcessor
-    >>> from madmom.audio.spectrogram import LogarithmicSpectrogramProcessor, \
-SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
-    >>> log = LogarithmicSpectrogramProcessor()
-    >>> diff = SpectrogramDifferenceProcessor(positive_diffs=True)
-    >>> mb = MultiBandSpectrogramProcessor(crossover_frequencies=[270])
-    >>> pre_proc = SequentialProcessor([log, diff, mb])
-
-    >>> act = pre_proc('tests/data/audio/sample.wav')
-    >>> proc(act)  # doctest: +ELLIPSIS
-    array([[ 0.82,  4.  ],
-           [ 1.78,  1.  ],
-           ...,
-           [ 3.7 ,  3.  ],
-           [ 4.66,  4.  ]])
     """
     # TODO: this should not be lists (lists are mutable!)
-#     MIN_BPM = [55, 60]
-#     MAX_BPM = [205, 225]
-#     NUM_TEMPI = [None, None]
-#     # TODO: make this parametric
-#     # Note: if lambda is given as a list, the individual values represent the
-#     #       lambdas for each transition into the beat at this index position
-#     TRANSITION_LAMBDA = [100, 100]
-    
-    MIN_BPM = [55]
-    MAX_BPM = [205]
-    NUM_TEMPI = [None]
+    MIN_BPM = [100, 90, 180]
+    MAX_BPM = [150, 250, 250]
+    NUM_TEMPI = [None, None, None]
     # TODO: make this parametric
     # Note: if lambda is given as a list, the individual values represent the
     #       lambdas for each transition into the beat at this index position
-    TRANSITION_LAMBDA = [100]
+    TRANSITION_LAMBDA = [100, 100, 100]
+    
+    if not WITH_MAKAM:   
+        TRANSITION_LAMBDA = [100, 100]
+        NUM_TEMPI = [None, None]
+    
+    # around min and max for makam dataset
+#     MIN_BPM = [100] 
+#     MAX_BPM = [205] 
+#     NUM_TEMPI = [None]
+#     # TODO: make this parametric
+#     # Note: if lambda is given as a list, the individual values represent the
+#     #       lambdas for each transition into the beat at this index position
+#     TRANSITION_LAMBDA = [100]
     
     def __init__(self, pattern_files, min_bpm=MIN_BPM, max_bpm=MAX_BPM,
                  num_tempi=NUM_TEMPI, transition_lambda=TRANSITION_LAMBDA,
-                 downbeats=False, fps=None, **kwargs):
+                 downbeats=False, fps=None, usul_type=None, **kwargs):
         # pylint: disable=unused-argument
         # pylint: disable=no-name-in-module
 
@@ -150,6 +105,7 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
         self.downbeats = downbeats
         self.fps = fps
         self.num_beats = []
+
         # convert timing information to construct a state space
         min_interval = 60. * self.fps / np.asarray(max_bpm)
         max_interval = 60. * self.fps / np.asarray(min_bpm)
@@ -162,9 +118,12 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
             raise ValueError('at least one rhythmical pattern must be given.')
         
         # the note state space and transition model are same for all patterns
-        self.note_state_space = NoteStateSpace(NUM_NOTES)
-        note_transition_model = NoteTransitionModel(self.note_state_space)
-#         bar_note_state_space = BarNoteStateSpace(bar_state_space, note_state_space)
+        if WITH_NOTES_STATES:
+
+            self.note_state_space = NoteStateSpace(NUM_SEMITONES, STEPS_PER_SEMITONE, 3 )
+        else:            
+            self.note_state_space = NoteStateSpace(1, 1, 1)
+        note_transition_model = NoteTransitionModel(self.note_state_space, usul_type, WITH_NOTES_STATES)
 
         # load the patterns
         for p, pattern_file in enumerate(pattern_files):
@@ -178,8 +137,10 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
                     # Python 2 doesn't have/need the encoding
                     pattern = pickle.load(f)
             # get the fitted GMMs and number of beats
-            gmms.append(pattern['gmms'])
             num_beats = pattern['num_beats']
+            if USUL_NUM_BEATS[usul_type] != num_beats: # workaround to use only the pattern for the usul of the current recording
+                continue
+            gmms.append(pattern['gmms'])
             self.num_beats.append(num_beats)
             # model each rhythmic pattern as a bar
             bar_state_space = BarStateSpace(num_beats, min_interval[p],
@@ -187,10 +148,9 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
             bar_transition_model = BarTransitionModel(bar_state_space,
                                                   transition_lambda[p])
 
-            
-            bar_note_transition_model = BarNoteTransitionModel(bar_transition_model, note_transition_model)
-            
-            state_spaces.append(bar_state_space)
+            bar_note_transition_model = BarNoteTransitionModel(bar_transition_model, note_transition_model, WITH_NOTES_STATES)
+                                                                
+            state_spaces.append(bar_state_space) # in fact only one state space
             transition_models.append(bar_note_transition_model)
         
         # create multi pattern state space, transition and observation model
@@ -204,7 +164,12 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
         self.bar_note_om = GMMNotePatternTrackingObservationModel(bar_om, note_om)
         # instantiate a HMM
         self.hmm = Hmm(self.tm, self.bar_note_om, None)
-
+    
+    def set_file_name(self, file_name):
+            self.file_name = file_name
+    def set_output_dir(self, output_dir):
+        self.output_dir = output_dir
+    
     def process(self, activations):
         """
         Detect the beats based on the given activations.
@@ -213,7 +178,7 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
         ----------
         activations : numpy array shape (observations, 3)
             dimensions  :,0:1 SpectraL Flux Activations (i.e. multi-band spectral features).
-            dimension   :,2 Note pitch  
+            dimension   :,2:3 Note pitch + prob.  
         Returns
         -------
         beats : numpy array
@@ -222,15 +187,28 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
         """
         # get the best state path by calling the viterbi algorithm
         path, _ = self.hmm.viterbi(activations)
-        #TODO: decompose combined state-space
         num_bar_states = len(self.st.state_positions) # NOT SURE what happens with more than 1 pattern
         num_note_states = self.note_state_space.num_states
         
+        #decompose combined state-space into bar and notes
         (path_indices_bar, path_indices_note) = np.unravel_index(path, (num_bar_states, num_note_states), order='F')
         
         # print decoded note states sequence
-#         for i in path_indices_note:
-#             print i
+        f0_values = activations[:,2]
+        onsetframes  = notestates_to_onsetframes( path_indices_note, f0_values)
+        hop_time = float (1.0 / self.fps)
+        # store detected timestamps
+        
+            
+        
+        MBID = os.path.basename(self.file_name)[:-4]
+        
+        extension = determine_file_with_extension(NUM_SEMITONES, STEPS_PER_SEMITONE, WITH_BEAT_ANNOS=0, WITH_DETECTED_BEATS=1)
+        URI_output = os.path.join(self.output_dir, MBID + extension)
+    
+        store_results(onsetframes, URI_output, hop_time)
+        
+        
         
         # the positions inside the pattern (0..num_beats)
         positions = self.st.state_positions[path_indices_bar]
@@ -249,6 +227,8 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
             return beats[beats[:, 1] == 1][:, 0]
         else:
             return beats
+        
+
     
     @staticmethod
     def add_arguments(parser, pattern_files=None, min_bpm=MIN_BPM,
@@ -323,3 +303,42 @@ SpectrogramDifferenceProcessor, MultiBandSpectrogramProcessor
                        help='output only the downbeats')
         # return the argument group so it can be modified if needed
         return g
+
+def notestates_to_onsetframes( path_indices_note, f0_values):
+        '''
+        Parameters
+        ------------------
+        
+        path_indices_note: list (n) 
+            indices of decoded note_states
+        
+        f0_values: n
+            detected f0
+        
+        Returns
+        -----------------
+        frame numbers of onsets
+        '''
+        STEPS_PER_PITCH = 3
+        step_states = np.mod(path_indices_note, STEPS_PER_PITCH) # convert to attack, sustain, sience.
+        
+        prev_IsVoiced = True
+        onsetFrames = []
+        for iFrame in range(len(step_states)):
+                        
+            isVoiced = step_states[iFrame] < STEPS_PER_PITCH - 1 and f0_values[iFrame] > 0
+            
+            if isVoiced and iFrame != len(step_states)-1: # sanity check                  
+                if prev_IsVoiced == 0: # set onset at non-voiced-to-voiced transition
+                    onsetFrames.append( iFrame )
+            prev_IsVoiced = isVoiced
+            
+#         path_indices_note_phase < 3 # intersect these
+# 
+#         f0_values[2,:] > 0 
+#         # zero non-voiced 1 voiced
+#         
+#         np.diff # only there where  changes occur.
+#         
+#         # get only changes with 0-> 1 
+        return onsetFrames

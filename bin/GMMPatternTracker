@@ -17,9 +17,12 @@ from madmom.audio.spectrogram import (FilteredSpectrogramProcessor,
                                       MultiBandSpectrogramProcessor)
 from madmom.features import ActivationsProcessor
 from madmom.features.beats import PatternTrackingProcessor
-from madmom.models import PATTERNS_BALLROOM
-from madmom.features.bar_notes import NotePatternTrackingProcessor
-
+from madmom.models import PATTERNS_BALLROOM, PATTERNS_MAKAM
+from madmom.features.bar_notes import NotePatternTrackingProcessor, BEAT_AWARE
+# from GMMNotePatternTracker import extract_beats_all
+from doit_all import  ordered_list_MBID
+import os
+import sys
 
 def main():
     """GMMPatternTracker"""
@@ -69,7 +72,6 @@ def main():
     ActivationsProcessor.add_arguments(p)
     SignalProcessor.add_arguments(p, norm=False, gain=0)
     PatternTrackingProcessor.add_arguments(p)
-#     NotePatternTrackingProcessor.add_arguments(p)
 
     # parse arguments
     args = p.parse_args()
@@ -77,7 +79,9 @@ def main():
     # set immutable defaults
     args.num_channels = 1
     args.sample_rate = 44100
-    args.fps = 50
+    args.fps = 172
+#     args.fps = 50
+
     args.num_bands = 12
     args.fmin = 30
     args.fmax = 17000
@@ -87,7 +91,9 @@ def main():
     args.diff_ratio = 0.5
     args.positive_diffs = True
     args.crossover_frequencies = [270]
-    args.pattern_files = PATTERNS_BALLROOM
+#     args.pattern_files = PATTERNS_BALLROOM
+    args.pattern_files = PATTERNS_MAKAM
+
 
     # print arguments
     if args.verbose:
@@ -113,8 +119,7 @@ def main():
         out_processor = ActivationsProcessor(mode='w', **vars(args))
     else:
         # downbeat processor
-#         downbeat_processor = PatternTrackingProcessor(**vars(args))
-        downbeat_processor = NotePatternTrackingProcessor(**vars(args))
+        downbeat_processor = PatternTrackingProcessor(**vars(args))
         if args.downbeats:
             # simply write the timestamps
             from madmom.utils import write_events as writer
@@ -130,6 +135,23 @@ def main():
     # and call the processing function
     args.func(processor, **vars(args))
 
+def extract_beats_all():
+    data_dir = '/Users/joro/workspace/otmm_vocal_segments_dataset/'
+    
+    if BEAT_AWARE: 
+        a = 'experiments/ht_0_0058/ht_0_0058_semitones_15_steps_2/'
+    else:
+        a = 'experiments/ht_0_0058/'
+        
+    for MBID in ordered_list_MBID.keys():
+            URI_output = os.path.join(data_dir, a, MBID, MBID + '.estimatedbeats_')
+            URI_wav = os.path.join(data_dir, 'data/', MBID, MBID + '.wav')
+            
+            print ("python ~/workspace/madmom_notes/bin/GMMPatternTracker single -o {} {};".format(URI_output, URI_wav))
+            
+            sys.argv = ['dummy', 'single','-o', URI_output, URI_wav ]
+            main()
 
 if __name__ == '__main__':
-    main()
+#     main()
+    extract_beats_all()

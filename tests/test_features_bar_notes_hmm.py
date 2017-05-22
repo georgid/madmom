@@ -16,8 +16,17 @@ class TestNoteTransitionModelClass(unittest.TestCase):
         
         def setUp(self):
             self.NUM_NOTE_STATES = 5
-            note_state_space = NoteStateSpace(self.NUM_NOTE_STATES)
-            self.note_transition_model = NoteTransitionModel(note_state_space)
+            self.NUM_NOTE_STATES = 2
+            self.NUM_NOTE_STATES = 1
+            
+            STATES_PER_STEP = 1 
+            STEPS_PER_SEMITONE=1
+            NUMBER_SEMITONES=1
+            
+            
+            note_state_space = NoteStateSpace(NUMBER_SEMITONES, STEPS_PER_SEMITONE, STATES_PER_STEP )
+            with_dummy = 1
+            self.note_transition_model = NoteTransitionModel(note_state_space, with_dummy) 
         
         def test_values(self):
             self.assertTrue(len(self.note_transition_model.to_states) == 
@@ -25,6 +34,9 @@ class TestNoteTransitionModelClass(unittest.TestCase):
                             len(self.note_transition_model.probs))
             self.assertTrue(max(self.note_transition_model.to_states) < self.note_transition_model.num_states)
             self.assertTrue(max(self.note_transition_model.prev_states) < self.note_transition_model.num_states)
+        
+
+            
  
 class TestBarNoteTransitionModelClass(unittest.TestCase):
 
@@ -32,8 +44,8 @@ class TestBarNoteTransitionModelClass(unittest.TestCase):
         self.bss = BarStateSpace(1, 1, 4)
         self.btm = BarTransitionModel(self.bss, 100)
         self.NUM_NOTE_STATES = 1
-        note_state_space = NoteStateSpace(self.NUM_NOTE_STATES)
-        note_transition_model = NoteTransitionModel(note_state_space)
+        note_state_space = NoteStateSpace(1,1,1)
+        note_transition_model = NoteTransitionModel(note_state_space, 0)
         self.bntm = BarNoteTransitionModel(self.btm, note_transition_model) 
 
     def test_types(self):

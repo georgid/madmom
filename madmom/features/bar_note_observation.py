@@ -8,6 +8,17 @@ from madmom.ml.hmm import ObservationModel
 from madmom.features.bar_notes_hmm import substates_to_flatidx
 from madmom.processors import SequentialProcessor
 import sys
+import os
+import json
+
+
+# parentDir = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__) ), os.path.pardir,  os.path.pardir,  os.path.pardir))
+# path_Alignment_duration =     os.path.join(parentDir, 'AlignmentDuration')
+# if path_Alignment_duration not in sys.path:
+#         sys.path.append(path_Alignment_duration)
+from demo import extract_predominant_vocal_melody 
+from pypYIN.MonoNoteHMM import MonoNoteHMM  
+import logging
 
 '''
 Created on Feb 28, 2017
@@ -26,15 +37,58 @@ class CombinedFeatureProcessor(SequentialProcessor):
     Example usage: 
     in_processor = CombinedFeatureProcessor([sig, frames, filt, log, diff, mb])
     '''
+    def set_params(self, pitch_file_URI, hopsize, framesize, end_ts):
+        self.hopsize_pitch =  hopsize
+        self.framesize_pitch = framesize
+        self. pitch_file_URI  = pitch_file_URI
+        self.end_ts = end_ts
+        
     def process(self, data):
         
         data = super(CombinedFeatureProcessor, self).process(data)
-        # dummy. TODO: add here extraction of other feature
-        EXTERNAL_FEATURE_DIMENSION = 1
-        data_plus_external_feature = np.hstack((data, np.zeros((data.shape[0],EXTERNAL_FEATURE_DIMENSION)) ))
-        return data_plus_external_feature
+        # extract pitch
+        MIDI_pitch_contour_and_prob = self._extract_midi_pitch(self.pitch_file_URI, self.hopsize_pitch, self.framesize_pitch, self.end_ts)
         
-
+        if MIDI_pitch_contour_and_prob.shape[0] > data.shape[0]:
+            to_frame_idx = data.shape[0]
+            logging.warning('MIDI pitch has length {} whihch is longer than spectral flux features'.format(MIDI_pitch_contour_and_prob.shape[0]) )
+#             sys.exit( 'Not implemented. midi pitch frames are {} and spectral flux are {}'.format(MIDI_pitch_contour_and_prob.shape[0], data.shape[0]) )
+        else: 
+            to_frame_idx = MIDI_pitch_contour_and_prob.shape[0]
+        # combine
+        data_plus_external_feature = np.hstack((data[:to_frame_idx,:], MIDI_pitch_contour_and_prob[:to_frame_idx,:] ))
+        return data_plus_external_feature
+    
+    def _extract_midi_pitch(self, audio_file_URI, hopSize, frameSize, end_ts):
+        '''
+        extract pitch feature
+        '''
+        PITCH_PROB = 0.9 # global as in [Mauch] paper
+        
+        pitch_file_URI = audio_file_URI[:-4] + '.pitch_audio_analysis' 
+        if os.path.isfile(pitch_file_URI):
+            with open(pitch_file_URI, 'r') as f1:
+                estimatedPitch_vocal = json.load(f1)
+                estimatedPitch_vocal = np.array(estimatedPitch_vocal)
+        else:
+            estimatedPitch_vocal = extract_predominant_vocal_melody(audio_file_URI, hopSize, frameSize, None, end_ts)
+            # write to file
+            with open(pitch_file_URI, 'w') as f:
+                json.dump(estimatedPitch_vocal.tolist(), f)
+        
+        ## convert to MIDI    
+        MIDI_pitch_contour_and_prob = np.zeros((len(estimatedPitch_vocal),2)) 
+        MIDI_pitch_contour_and_prob[:,0] = estimatedPitch_vocal
+        
+        for iFrame in range(len(estimatedPitch_vocal)):
+            if estimatedPitch_vocal[iFrame] > 0:  # zero or negative value (silence) remains with 0 probability and negative frequency in Herz
+                MIDI_pitch_contour_and_prob[iFrame][0] = 12 * np.log(estimatedPitch_vocal[iFrame]/440.0)/np.log(2.0) + 69
+                MIDI_pitch_contour_and_prob[iFrame][1] = PITCH_PROB # constant voicing probability = 0.9
+        
+        return MIDI_pitch_contour_and_prob
+    
+    
+    
 class GMMNoteObservationModel(ObservationModel):
     """
     Observation model for GMM based beat tracking with a HMM.
@@ -56,11 +110,20 @@ class GMMNoteObservationModel(ObservationModel):
     def __init__(self,  state_space):
         # save the parameters
         self.state_space = state_space
+        
+        
+        with_bar_dependent_probs = 1 # dummy
+        hopTime = 1 # dummy
+        usul_type = 'duyek' # dummy
+        self.hmm_notes = MonoNoteHMM(self.state_space.steps_per_semitone, self.state_space.num_semitones,  with_bar_dependent_probs, hopTime, usul_type)
+        self.hmm_notes.build_obs_model()
+        
+         
         # define the pointers of the log densities
 #         pointers = np.zeros(state_space.num_states, dtype=np.uint32)
         pointers = np.array( range(state_space.num_states), dtype=np.uint32)
         # each note state points to exactly one GMM
-        self.num_gmms = state_space.num_states 
+        self.num_gmms = state_space.num_states
         # instantiate a ObservationModel with the pointers
         super(GMMNoteObservationModel, self).__init__(pointers)
 
@@ -75,15 +138,20 @@ class GMMNoteObservationModel(ObservationModel):
 
         Returns
         -------
-        numpy array
+        numpy array: nd.array shape()
             Log densities of the observations.
 
         """
         # dummy densities: TODO define densities here
-        log_densities = np.zeros((len(observations), self.state_space.num_states), dtype=np.float)
+#         log_densities = np.zeros((len(observations), self.state_space.num_states), dtype=np.float)
+        
+        densities = self.hmm_notes.calculatedObsProb(observations)
+        densities = self.hmm_notes.normalize_obs_probs(densities, observations)
+        densities = densities.T
         
         # return the densities
-        return log_densities
+        return np.log(densities)
+
 
 class GMMNotePatternTrackingObservationModel(ObservationModel):
     """
@@ -131,12 +199,12 @@ class GMMNotePatternTrackingObservationModel(ObservationModel):
             combined Log densities of the observations.
 
         """
-        if observations.shape[1] != 3:
-            sys.exit('expecting a 3-dimensioanl feature: \
+        if observations.shape[1] != 4:
+            sys.exit('expecting a 4-dimensioanl feature: \
              two-dimnesional spectral flux + one-dimnesional pitch. Got intstead {} dimensional featrure '.format(observations.shape[1]))
         # compute densities with the two observation models
         bar_log_densities = self.bar_om.log_densities(observations[:,:2]) # size O x (num_bar_gmms -> for each pattern)
-        note_log_densities = self.bar_note_om.log_densities(observations[:,2]) # size O x num_note_gmms
+        note_log_densities = self.bar_note_om.log_densities(observations[:,2:]) # size O x num_note_gmms
         
 
         curr_num_bar_gmms = self.num_gmms_bar # for current pattern
@@ -149,6 +217,12 @@ class GMMNotePatternTrackingObservationModel(ObservationModel):
         '''
         joint_log_densities: the LHS of
         p(y^f, y^p | x) = p(y^f | b) * p (y^p | n), for each b \in |num_bar_gmms| and for each n \in |num_note_gmms|
+        
+        Parameters
+        -------------------
+        bar_log_densities shape (num_obs, num_bar_states)
+        note_log_densities shape (num_obs, num_note_states)
+        
         
         '''
         num_observations = bar_log_densities.shape[0]

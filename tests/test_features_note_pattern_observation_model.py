@@ -15,6 +15,12 @@ from madmom.features.bar_note_observation import GMMNotePatternTrackingObservati
     GMMNoteObservationModel
 import pickle
 from madmom.models import PATTERNS_BALLROOM
+from madmom.features.bar_notes import notestates_to_onsetframes
+
+STEPS_PER_SEMITONE = 2
+NUM_SEMITONES = 1
+STATES_PER_STEP = 1
+
 class TestGMMNotePatternTrackingObservationModelClass(unittest.TestCase):
     '''
         Test if the logic of combining the existing  PatternObservation with NoteObservation model is correct
@@ -25,8 +31,8 @@ class TestGMMNotePatternTrackingObservationModelClass(unittest.TestCase):
 
     def setUp(self):
         bss = BarStateSpace(1, 1, 4) # 1 beat; intervals = [1,4] 
-        self.NUM_NOTE_STATES = 2 
-        note_state_space = NoteStateSpace(self.NUM_NOTE_STATES)
+         
+        note_state_space = NoteStateSpace(NUM_SEMITONES, STEPS_PER_SEMITONE, STATES_PER_STEP)
         mpss = MultiPatternStateSpace([bss])
         
         ############# set up gmms
@@ -45,11 +51,11 @@ class TestGMMNotePatternTrackingObservationModelClass(unittest.TestCase):
         gmms.append(pattern['gmms'])
         self.bar_om = GMMPatternTrackingObservationModel(gmms, mpss)
             
-        note_om = GMMNoteObservationModel(note_state_space)
+        self.note_om = GMMNoteObservationModel(note_state_space)
         
-        self.bar_note_om = GMMNotePatternTrackingObservationModel(self.bar_om , note_om)
+        self.bar_note_om = GMMNotePatternTrackingObservationModel(self.bar_om , self.note_om)
         # two dummy spectral flux observations
-        self.obs = np.asarray([[  0.46020326,   4.08274412],[  5.48006916,  22.58586502]], dtype=np.float32)
+        self.obs = np.asarray([[  0.46020326,   4.08274412, 0, 0],[  5.48006916,  22.58586502, 0, 0]], dtype=np.float32)
          
 
     def test_types(self):
@@ -63,16 +69,21 @@ class TestGMMNotePatternTrackingObservationModelClass(unittest.TestCase):
     def test_compatible(self):
 
         #         bar_note_om.pointers should be equivalent to bar_om.pointers
-        if self.NUM_NOTE_STATES == 1:
+        num_note_states = self.note_om.state_space.num_states
+        if num_note_states == 1:
             self.assertTrue(np.allclose(self.bar_note_om.pointers,
                                     self.bar_om.pointers))
-            # only if same probs.
+            # only if note obs. probabilitis. are set to zero
             self.assertTrue(np.allclose(self.bar_note_om.densities(self.obs),
                                     self.bar_om.densities(self.obs)))
         
-        elif self.NUM_NOTE_STATES == 2: # TODO test for 2>1: do NUM_NOTE_STATES times hstack
+        else: # test for 2 or more states
             num_gmms = self.bar_om.num_gmms
-            expected_bar_om_pointers = np.hstack((self.bar_om.pointers, self.bar_om.pointers + num_gmms)) 
+            
+            expected_bar_om_pointers = np.array([])
+            for n in range(num_note_states):
+                expected_bar_om_pointers = np.hstack((expected_bar_om_pointers, self.bar_om.pointers + n * num_gmms)) 
+            
             self.assertTrue(np.allclose(self.bar_note_om.pointers,
                                     expected_bar_om_pointers))
         
@@ -82,4 +93,12 @@ class TestGMMNotePatternTrackingObservationModelClass(unittest.TestCase):
 #                                      [-1.10866262, -4.60517021],
 #                                      [-1.09861229, -np.inf]]))
 
- 
+class TestPostprocessorPathClass(unittest.TestCase):
+    
+    def test_values(self):
+        
+        path_indices_note =  [ 281, 279,  280, 280, 280, 281, 279, 280 ]
+        f0_values = [35, 48, 48 , 48 , 48 , 0, 0 ,0 ]
+        
+        onsetFrames = notestates_to_onsetframes(path_indices_note, f0_values)
+        self.assertEqual(onsetFrames, [1])
