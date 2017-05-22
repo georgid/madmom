@@ -4,7 +4,7 @@ Run downbeat detection:
 # install. see instructions at https://github.com/CPJKU/madmom/
 
 # detect beats one recordin. write output to file
-python ~/workspace/madmom/bin/GMMPatternTracker single  -o $OUTPUT_FILE  $INPUT_AUDIO
+`python ~/workspace/madmom/bin/GMMPatternTracker single  -o $OUTPUT_FILE  $INPUT_AUDIO`
 
 #  detect beats one recording
 python ~/workspace/madmom/bin/GMMPatternTracker single $INPUT_AUDIO
