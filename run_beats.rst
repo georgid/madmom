@@ -36,7 +36,7 @@ python ~/workspace/madmom_notes/bin/GMMNotePatternTracker_all.py
 
 
 
-Eval estimated beats: 
+Evaluate estimated beats: 
 ----------------------------------------------------
 
 
