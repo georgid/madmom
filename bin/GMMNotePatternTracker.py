@@ -21,7 +21,7 @@ from madmom.features.bar_notes import NotePatternTrackingProcessor
 from madmom.features.bar_note_observation import    CombinedFeatureProcessor
 import mir_eval
 import os
-from demo import get_usul_from_rec
+from demo import get_meter_from_rec
 from doit_all import create_output_dirs
 from pypYIN.MonoNoteParameters import WITH_MAKAM
 
@@ -95,7 +95,7 @@ def main():
     start_ts, end_ts = load_excerpt(excerpt_URI)
     
     rec_ID = os.path.basename(args.infile.name) [:-4]
-    args.usul_type = get_usul_from_rec(rec_ID)
+    args.usul_type = get_meter_from_rec(rec_ID)
     
     # print arguments
     if args.verbose:
