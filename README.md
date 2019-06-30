@@ -24,6 +24,7 @@ bin/GMMNotePatternTracker
 > Georgi Dzhambazov, André Holzapfel, Ajay Srinivasamurthy, Xavier Serra, 
 > Metrical-Accent Aware Vocal Onset Detection in Polyphonic Audio, In Proceedings of ISMIR 2017
 
+NOTE: This repository works in together with the other repository based on [pypYIN](https://github.com/georgid/pypYIN/) for pitch tracking.
 
 ---------------------
 The rest of the documentation about [Madmom in general](https://github.com/georgid/madmom)
