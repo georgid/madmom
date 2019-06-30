@@ -1,6 +1,4 @@
-======
-madmom
-======
+# madmom (with synchronous note onsets and beat position)
 
 This fork adds a hidden state of a musical note (in short note state). 
 It is however generic enough and can be used with any other musical concept as hidden state. 
